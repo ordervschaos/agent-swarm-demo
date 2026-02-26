@@ -1,11 +1,9 @@
 {
-  "name": "chapter-1-the-cortex",
+  "name": "chapter-2-the-body",
   "private": true,
   "type": "module",
   "scripts": {
-    "raw-cortex": "node --no-deprecation --import tsx/esm raw-cortex.ts",
-    "action-interface": "node --no-deprecation --import tsx/esm action-interface.ts",
-    "agent-loop": "node --no-deprecation --import tsx/esm agent-loop.ts"
+    "hands": "node --no-deprecation --import tsx/esm hands.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.0",

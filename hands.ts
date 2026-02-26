@@ -1,30 +1,30 @@
 /**
- * The Task-Local Executive (The Agent Loop)
+ * Hands — The Agent Changes the World
  *
- * The cortex can reason (raw-cortex) and act (action-interface), but it does
- * each once and stops. The task-local executive is the loop: keep calling the
- * LLM until IT decides to stop requesting tools. The LLM decides "I need
- * another action" or "I'm done." YOU build the loop that respects that decision.
+ * Chapter 1 gave the agent senses (read tools). Now it gets hands (write tools).
+ * Same agent loop from Chapter 1, but the tools array now includes write_file.
  *
- * This is the moment the LLM becomes an agent.
+ * The containment: all file operations are sandboxed to ./sandbox/.
+ * The tools array is the permission model — no bash tool means no escape.
  *
- * Run: npm run agent-loop
- * Try: npm run agent-loop "What directories exist here? List the contents of each one."
+ * Run: npm run hands
+ * Try: npm run hands "Create a file called hello.txt with a greeting, then read it back"
+ * Try: npm run hands "Create a mini website with index.html and style.css"
  */
 
 import { llm, MODEL } from './llm.js'
-import { listFilesTool, executeTool } from './tools.js'
+import { listFilesTool, readFileTool, writeFileTool, executeTool } from './tools.js'
 import type { ChatCompletionMessageParam } from 'openai/resources/index'
 
-const tools = [listFilesTool]
+const tools = [listFilesTool, readFileTool, writeFileTool]
 
-// --- The agent loop ---
+// --- The agent loop (same as Chapter 1, new tools) ---
 
-const MAX_ITERATIONS = 10
-const prompt = process.argv[2] || 'What directories exist here? List the contents of each one.'
+const MAX_ITERATIONS = 15
+const prompt = process.argv[2] || 'Create a file called hello.txt with a friendly greeting, then read it back to verify it worked.'
 
 const messages: ChatCompletionMessageParam[] = [
-  { role: 'system', content: 'You are a helpful agent. Use your tools to accomplish the task. When you have the final answer, respond with text (no tool call).' },
+  { role: 'system', content: 'You are a helpful agent. Use your tools to accomplish the task. All file paths are relative to the sandbox directory. When you have the final answer, respond with text (no tool call).' },
   { role: 'user', content: prompt },
 ]
 
@@ -73,3 +73,4 @@ while (true) {
 }
 
 console.log(`\n--- Done in ${iterations} iteration(s) ---`)
+console.log(`Check ./sandbox/ to see the files the agent created.`)
