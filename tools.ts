@@ -1,14 +1,12 @@
 /**
- * Tool definitions and execution — now with write actions.
+ * Tool definitions — sandbox tools from Chapter 2 + memory tools.
  *
- * Chapter 1's tools were read-only (list_files). Now we add read_file and write_file.
- * All paths are sandboxed to ./sandbox/ — the agent cannot escape this directory.
- *
- * The tools array IS the permission model. No tool = no capability.
- * Path validation inside the tool = structural containment.
+ * Sandbox tools (list_files, read_file, write_file) operate on ./sandbox/.
+ * Memory tools (save_note, read_notes) operate on ./memory/.
+ * Two separate directories: workspace ≠ memory.
  */
 
-import { readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs'
+import { readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync, appendFileSync } from 'fs'
 import { resolve, relative } from 'path'
 
 // --- Sandbox ---
@@ -22,7 +20,6 @@ function safePath(input: string): string {
   if (rel.startsWith('..') || resolve(resolved) !== resolved && rel.startsWith('/')) {
     throw new Error(`Path escapes sandbox: ${input}`)
   }
-  // Double-check: resolved path must start with sandbox path
   if (!resolved.startsWith(SANDBOX)) {
     throw new Error(`Path escapes sandbox: ${input}`)
   }
@@ -31,6 +28,11 @@ function safePath(input: string): string {
 
 // Ensure sandbox exists on import
 if (!existsSync(SANDBOX)) mkdirSync(SANDBOX, { recursive: true })
+
+// --- Memory ---
+
+const MEMORY_DIR = resolve('memory')
+const NOTES_FILE = resolve(MEMORY_DIR, 'notes.md')
 
 // --- Tool definitions (JSON schemas for the LLM) ---
 
@@ -79,6 +81,33 @@ export const writeFileTool = {
   },
 }
 
+export const saveNoteTool = {
+  type: 'function' as const,
+  function: {
+    name: 'save_note',
+    description: 'Save a note to persistent memory. Use this when the user tells you something worth remembering for future sessions.',
+    parameters: {
+      type: 'object' as const,
+      properties: {
+        content: { type: 'string', description: 'The note to save' },
+      },
+      required: ['content'],
+    },
+  },
+}
+
+export const readNotesTool = {
+  type: 'function' as const,
+  function: {
+    name: 'read_notes',
+    description: 'Read all saved notes from persistent memory.',
+    parameters: {
+      type: 'object' as const,
+      properties: {},
+    },
+  },
+}
+
 // --- Tool execution ---
 
 export function executeTool(name: string, args: Record<string, string>): string {
@@ -92,14 +121,31 @@ export function executeTool(name: string, args: Record<string, string>): string 
     }
     if (name === 'write_file') {
       const filePath = safePath(args.path)
-      // Create parent directories if needed
       const parent = resolve(filePath, '..')
       if (!existsSync(parent)) mkdirSync(parent, { recursive: true })
       writeFileSync(filePath, args.content)
       return `Wrote ${args.content.length} bytes to ${args.path}`
     }
+    if (name === 'save_note') {
+      if (!existsSync(MEMORY_DIR)) mkdirSync(MEMORY_DIR, { recursive: true })
+      const timestamp = new Date().toISOString().slice(0, 16).replace('T', ' ')
+      const line = `- [${timestamp}] ${args.content}\n`
+      appendFileSync(NOTES_FILE, line)
+      return `Saved note to memory.`
+    }
+    if (name === 'read_notes') {
+      if (!existsSync(NOTES_FILE)) return 'No notes yet.'
+      return readFileSync(NOTES_FILE, 'utf-8') || 'No notes yet.'
+    }
     return `Unknown tool: ${name}`
   } catch (e: any) {
     return `Error: ${e.message}`
   }
+}
+
+/** Load notes from memory file, or return null if none exist. */
+export function loadNotes(): string | null {
+  if (!existsSync(NOTES_FILE)) return null
+  const content = readFileSync(NOTES_FILE, 'utf-8').trim()
+  return content || null
 }

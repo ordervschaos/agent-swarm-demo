@@ -1,25 +1,27 @@
-# Chapter 2: The Body — Hands That Can Change the World
+# Chapter 3: Memory — The Agent Remembers
 
-*From read-only senses to write actions — and the containment that makes them safe.*
+*From amnesiac to persistent — and why memory splits into types.*
 
-Chapter 1 gave the agent **senses** — read-only tools that observe the world. The agent could list files but couldn't create, modify, or delete anything. Now it gets **hands**: write tools that change the world. Same tool interface, different consequences.
+The agent from Chapters 1-2 can think, act, and write files — but it's amnesiac. Every run starts blank. The context window is finite, so you can't load everything. This forces a choice: what goes in the prompt? That choice creates **memory types**.
 
-The key lesson: **the tools array is the permission model.** You control what the agent can do by controlling what tools you give it. No bash tool = no shell access. No network tool = no HTTP requests. And path validation inside the tool = structural containment. You build the walls *before* you give it hands.
+Memory isn't one system. It's multiple systems forced into existence by the constraint of the context window. You can't fit everything, so you split: some things are always loaded (identity), some things are loaded when relevant (notes), some things live in external storage and get retrieved on demand. Each type has different tradeoffs — who curates it, when it loads, how much context it burns.
 
 ```
-THE BODY
+MEMORY
   ┌────────────────────────────────────────────────────────────────┐
-  │ CORTEX (Chapter 1)                                             │
-  │   Task-local executive (loop) + Reasoning (LLM)                │
+  │ SYSTEM PROMPT                                                   │
+  │   ┌──────────────┐  ┌──────────────────────────────┐           │
+  │   │ identity.md  │  │ memory/notes.md              │           │
+  │   │ (semantic)   │  │ (episodic)                   │           │
+  │   │ human-curated│  │ agent-curated                │           │
+  │   │ loaded every │  │ loaded if exists             │           │
+  │   │ run          │  │ written via save_note tool   │           │
+  │   └──────────────┘  └──────────────────────────────┘           │
   └────────────────────────────────────────────────────────────────┘
-  TOOLS (permission model)
-    ├── list_files(path)    ← read action (safe, idempotent)
-    ├── read_file(path)     ← read action (safe, idempotent)
-    └── write_file(path, content) ← WRITE ACTION (irreversible!)
-                                    ↕
-                              ┌──────────┐
-                              │ sandbox/ │  ← containment boundary
-                              └──────────┘
+  TOOLS
+    ├── list_files, read_file, write_file  ← sandbox (workspace)
+    ├── save_note(content)                 ← write to memory
+    └── read_notes()                       ← read from memory
 ```
 
 ---
@@ -30,7 +32,7 @@ THE BODY
 npm install
 ```
 
-Uses the same API key as Chapter 1. If you haven't set one up:
+Uses the same API key as Chapters 1-2. If you haven't set one up:
 
 1. Go to https://aistudio.google.com/apikey
 2. Create an API key
@@ -38,56 +40,84 @@ Uses the same API key as Chapter 1. If you haven't set one up:
 
 ---
 
-## Hands — The Agent Changes the World
+## Identity — Semantic Memory
 
-*The agent can now create, write, and verify files — all inside a sandbox.*
+*A file loaded into the system prompt that defines who the agent is.*
 
 ```bash
-npm run hands
-npm run hands "Create hello.txt with a greeting, then read it back"
-npm run hands "Create a mini website with index.html and style.css"
+npm run identity
+npm run identity "Who are you?"
 ```
 
-**What you're seeing:** The agent plans what to write, calls `write_file` to create files, then calls `read_file` to verify its own work. Look in `./sandbox/` — the files are real.
+**What you're seeing:** The agent reads `identity.md` at startup and injects it into the system prompt. Ask "who are you?" — it answers as Atlas, with the personality defined in the file. Same cortex, same loop, same tools — different identity.
 
-**What's different from Chapter 1:** The agent is no longer a passive observer. It changes the filesystem. Those writes are irreversible — once a file is created, it exists. But it's contained: the worst the agent can do is fill `./sandbox/` with files. It can't touch your home directory, it can't run shell commands, it can't access the network.
+**Try this:** Open `identity.md` and change the name to "Nova" and the personality to "enthusiastic and uses lots of exclamation marks." Run again. Different agent. The cortex (LLM) didn't change. The identity (memory) did.
 
-**The containment model:**
+**The lesson:** Semantic memory is content loaded into the system prompt from a file. It's **human-curated** — you wrote `identity.md`, not the agent. It burns context every run (the entire file sits in the prompt). But it gives the agent a stable identity, rules, and knowledge that persists across sessions.
 
-1. **Tool-level:** The tools array defines the agent's capabilities. No tool for bash, HTTP, or email = the agent literally cannot do those things. This isn't a policy it follows — it's a structural impossibility.
+This is `CLAUDE.md` in NanoClaw. Every group has one. The human writes it, the agent reads it every run.
 
-2. **Path-level:** Every file operation resolves the path and checks it starts with `./sandbox/`. Paths like `../../etc/passwd` are rejected before they reach the filesystem. The validation is in the tool, not the prompt.
+---
 
-3. **Together:** The agent has exactly three capabilities (list, read, write) and exactly one directory to use them in. This is the principle: containment isn't instructions to the LLM — it's the structure of what you give it.
+## Learned Facts — Episodic Memory
+
+*Memory the agent writes itself, persisted across runs.*
+
+```bash
+npm run remember "My name is Alex and I live in London. Remember this for next time."
+cat memory/notes.md
+npm run remember "What's my name and where do I live?"
+```
+
+**What you're seeing:** The first run, the agent uses `save_note` to write your info to `memory/notes.md`. The second run, it loads that file at startup and knows your name without being told again.
+
+**How it works:**
+1. At startup, check if `memory/notes.md` exists → load into system prompt as "Your notes from previous sessions"
+2. The agent also loads `identity.md` (semantic + episodic combined)
+3. `save_note(content)` appends a timestamped line to `memory/notes.md`
+4. `read_notes()` returns the file contents
+
+**The lesson:** Episodic memory is persistent storage the agent reads AND writes. It's **agent-curated** — the agent decides what to save. This is fundamentally different from semantic memory: no human in the loop. The agent builds its own knowledge over time.
+
+The tradeoff: agent-curated memory can drift, accumulate noise, or save irrelevant things. Human-curated memory is stable but requires a human to maintain it. Real systems use both.
 
 ---
 
 ## What you built
 
-| Component | What it does | Chapter 1 equivalent |
-|-----------|-------------|---------------------|
-| `tools.ts` | Sandboxed tools: list, read, write | `tools.ts` (read-only) |
-| `hands.ts` | Agent loop with write tools | `agent-loop.ts` (read-only) |
-| `sandbox/` | Containment boundary | *(none — no writes)* |
-
-The agent loop itself hasn't changed — it's the same loop from Chapter 1. What changed is the tools array. That's the point: the loop is generic. The tools define what the agent *is*.
+| Component | What it does | Memory type |
+|-----------|-------------|-------------|
+| `identity.md` | Agent name, personality, rules | Semantic (human-curated) |
+| `memory/notes.md` | Agent-written facts from past sessions | Episodic (agent-curated) |
+| `identity.ts` | Agent loop with identity loaded | Reads semantic memory |
+| `remember.ts` | Agent loop with identity + notes + memory tools | Reads + writes episodic memory |
 
 ---
 
 ## Key concepts
 
-**Read vs. write actions.** Both use the same tool interface — JSON schema in, structured call out. The LLM doesn't know or care about the difference. What differs is the *consequence*: read actions are safe and repeatable; write actions change the world and can't be undone.
+**Four memory types** (two built here, two in later chapters):
 
-**Structural containment.** The sandbox isn't a suggestion — it's enforced in code. The LLM can't "decide" to escape it. This is different from prompt-based safety ("please don't write outside the sandbox"), which the LLM could ignore. Structural containment is the immune system — it works regardless of what the LLM wants.
+| Type | Who curates | When loaded | Example |
+|------|------------|-------------|---------|
+| **Semantic** | Human | Every run | `identity.md`, `CLAUDE.md` |
+| **Episodic** | Agent | Every run (if exists) | `memory/notes.md`, auto-memory |
+| **Working** | Agent | During a single run | The conversation messages array |
+| **Retrieval** | System | On demand (search) | Vector DB, file search *(Chapter 7)* |
 
-**The tools array as permission model.** Compare what the agent *can't* do: run shell commands, make HTTP requests, send messages, access files outside sandbox. None of these are forbidden by policy — they're absent from the tools array. You gave the agent hands, but only hands that reach inside a box.
+**The context window constraint.** Everything the agent knows must fit in the context window. You can't load a 500-page manual into every prompt. This constraint forces you to split memory into types: what's always loaded (semantic), what's loaded when available (episodic), what's already in the conversation (working), and what's fetched on demand (retrieval).
+
+**Human-curated vs. agent-curated.** Semantic memory (`identity.md`) is stable — a human wrote it and it doesn't change between runs. Episodic memory (`notes.md`) grows — the agent adds to it every session. This distinction matters: human-curated memory is reliable but doesn't scale; agent-curated memory scales but can accumulate noise.
+
+**Workspace ≠ memory.** The sandbox (`./sandbox/`) is the agent's workspace — files it creates for the current task. Memory (`./memory/`) persists across runs. Same filesystem, different purposes. In NanoClaw, the container filesystem is the workspace; `CLAUDE.md` and auto-memory are the memory.
 
 ---
 
 ## Where this lives in NanoClaw
 
-Container isolation (Chapter 6) is this same principle at OS level. The Docker/Apple container IS the sandbox — a filesystem the agent can write to, with no access to the host. The container boundary enforces what the tools array enforces here, but at a higher level of abstraction.
+- **Semantic memory:** `groups/{name}/CLAUDE.md` — each group has a human-curated identity file. The agent reads it every run. You edit it to change the agent's behavior.
+- **Episodic memory:** Agent auto-memory — the agent saves facts about users, preferences, and context across conversations. Loaded into the system prompt each run.
+- **Working memory:** The conversation messages array — everything said in the current session. Lost when the session ends.
+- **Retrieval memory:** Coming in Chapter 7 — searching past conversations, documents, and external knowledge on demand.
 
-The progression: `sandbox/` directory (this chapter) → container filesystem (Chapter 6) → network isolation (Chapter 8). Same principle, bigger scope.
-
-**Next:** Checkout the `chapter-3` branch *(semantic and episodic memory — how the agent remembers across runs)*
+**Next:** Chapter 4 *(coming soon)*

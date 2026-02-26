@@ -1,9 +1,10 @@
 {
-  "name": "chapter-2-the-body",
+  "name": "chapter-3-memory",
   "private": true,
   "type": "module",
   "scripts": {
-    "hands": "node --no-deprecation --import tsx/esm hands.ts"
+    "identity": "node --no-deprecation --import tsx/esm identity.ts",
+    "remember": "node --no-deprecation --import tsx/esm remember.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.0",
