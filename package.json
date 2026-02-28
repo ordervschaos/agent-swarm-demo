@@ -3,10 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "semantic":  "node --no-deprecation --import tsx/esm semantic.ts",
-    "episodic":  "node --no-deprecation --import tsx/esm episodic.ts",
-    "vigilance": "node --no-deprecation --import tsx/esm vigilance.ts",
-    "clock":     "node --no-deprecation --import tsx/esm clock.ts"
+    "start": "node --no-deprecation --import tsx/esm index.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.0",

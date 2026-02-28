@@ -1,10 +1,5 @@
 /**
- * Agent — shared core for all entry points.
- *
- * Exports: tool arrays, loadPersona, buildSystemPrompt, runAgent.
- * Entry points compose these rather than reimplementing the loop.
- *
- * executeTool stays private — entry points never call it directly.
+ * Agent — tool arrays, persona loading, system prompt, and the run loop.
  */
 
 import { existsSync, readFileSync } from 'fs'
@@ -29,10 +24,10 @@ export function loadPersona(path?: string): string {
   return existsSync(p) ? readFileSync(p, 'utf-8') : ''
 }
 
-/** Build the standard system prompt. Appends a notes section if notes are provided. */
+/** Build the system prompt. Always includes memory instruction; appends notes if present. */
 export function buildSystemPrompt(identity: string, notes: string | null): string {
   let prompt = identity ? `${identity}\n\n---\n\n` : ''
-  prompt += `You are a helpful agent. Use your tools to accomplish tasks. All file paths are relative to the sandbox directory. When you have the final answer, respond with text (no tool call).`
+  prompt += `You are a helpful agent. Use your tools to accomplish tasks. All file paths are relative to the sandbox directory. When you have the final answer, respond with text (no tool call).\n\nWhen the user tells you something worth remembering for future sessions, use save_note to record it.`
   if (notes) prompt += `\n\n---\n\nYour notes from previous sessions:\n${notes}`
   return prompt
 }
