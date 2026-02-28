@@ -1,4 +1,6 @@
 node_modules/
+inbox/
+outbox/
 sandbox/
-memory/
+memory/notes.md
 .env.local
