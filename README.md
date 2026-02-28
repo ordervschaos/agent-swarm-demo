@@ -1,28 +1,18 @@
-# Chapter 3: Memory — The Agent Remembers
+# Chapter 4: Autonomy — The Agent Acts Without Being Asked
 
-*From amnesiac to persistent — and why memory splits into types.*
+*From reactive to autonomous — same cortex, different input source.*
 
-The agent from Chapters 1-2 can think, act, and write files — but it's amnesiac. Every run starts blank. The context window is finite, so you can't load everything. This forces a choice: what goes in the prompt? That choice creates **memory types**.
+So far the agent only acts when a human types. It's reactive — input comes from stdin, output goes to stdout, and nothing happens without a prompt. Now change one thing: the input source.
 
-Memory isn't one system. It's multiple systems forced into existence by the constraint of the context window. You can't fit everything, so you split: some things are always loaded (identity), some things are loaded when relevant (notes), some things live in external storage and get retrieved on demand. Each type has different tradeoffs — who curates it, when it loads, how much context it burns.
+Instead of `stdin`, the input channel is a directory: `inbox/`. When a `.txt` file appears, the daemon reads it as the task, runs the agent in-process, and writes the reply to `outbox/`. The human drops a file and walks away.
 
 ```
-MEMORY
-  ┌────────────────────────────────────────────────────────────────┐
-  │ SYSTEM PROMPT                                                   │
-  │   ┌──────────────┐  ┌──────────────────────────────┐           │
-  │   │ identity.md  │  │ memory/notes.md              │           │
-  │   │ (semantic)   │  │ (episodic)                   │           │
-  │   │ human-curated│  │ agent-curated                │           │
-  │   │ loaded every │  │ loaded if exists             │           │
-  │   │ run          │  │ written via save_note tool   │           │
-  │   └──────────────┘  └──────────────────────────────┘           │
-  └────────────────────────────────────────────────────────────────┘
-  TOOLS
-    ├── list_files, read_file, write_file  ← sandbox (workspace)
-    ├── save_note(content)                 ← write to memory
-    └── read_notes()                       ← read from memory
+BEFORE (chat.ts):              AFTER (daemon.ts):
+Human types → agent responds   File drops → agent responds
+Human is the trigger           fs.watch is the trigger
 ```
+
+The cortex doesn't change. The tools don't change. Memory doesn't change. The only thing that changes is **what triggers the agent**.
 
 ---
 
@@ -32,92 +22,111 @@ MEMORY
 npm install
 ```
 
-Uses the same API key as Chapters 1-2. If you haven't set one up:
-
-1. Go to https://aistudio.google.com/apikey
-2. Create an API key
-3. Add it to `.env.local`
+Same API key as Chapters 1-3.
 
 ---
 
-## Identity — Semantic Memory
-
-*A file loaded into the system prompt that defines who the agent is.*
+## Run
 
 ```bash
-npm run identity
-npm run identity "Who are you?"
+npm run daemon
 ```
 
-**What you're seeing:** The agent reads `identity.md` at startup and injects it into the system prompt. Ask "who are you?" — it answers as Atlas, with the personality defined in the file. Same cortex, same loop, same tools — different identity.
+Then in another terminal:
 
-**Try this:** Open `identity.md` and change the name to "Nova" and the personality to "enthusiastic and uses lots of exclamation marks." Run again. Different agent. The cortex (LLM) didn't change. The identity (memory) did.
+```bash
+echo "write a haiku about filesystems to sandbox/haiku.txt" > inbox/task.txt
+```
 
-**The lesson:** Semantic memory is content loaded into the system prompt from a file. It's **human-curated** — you wrote `identity.md`, not the agent. It burns context every run (the entire file sits in the prompt). But it gives the agent a stable identity, rules, and knowledge that persists across sessions.
+The daemon picks it up, runs the agent, writes the reply to `outbox/task.txt`. Walk away and come back — it'll be done.
 
-This is `CLAUDE.md` in NanoClaw. Every group has one. The human writes it, the agent reads it every run.
+```
+[daemon] watching inbox/ for .txt files
+[daemon] replies will appear in outbox/
+
+[inbox] task.txt
+  "write a haiku about filesystems to sandbox/haiku.txt"
+  [1] write_file({"path":"haiku.txt","content":"..."})
+[outbox] task.txt
+  "Done. I wrote a haiku to sandbox/haiku.txt."
+```
 
 ---
 
-## Learned Facts — Episodic Memory
+## Each task is independent
 
-*Memory the agent writes itself, persisted across runs.*
+The daemon passes `[{role:'user', content: task}]` — a single-turn conversation with no prior history. Spawn → process → release.
 
-```bash
-npm run remember "My name is Alex and I live in London. Remember this for next time."
-cat memory/notes.md
-npm run remember "What's my name and where do I live?"
+This is the key difference from `chat.ts`:
+
+| `chat.ts` (interactive) | `daemon.ts` (autonomous) |
+|------------------------|--------------------------|
+| Accumulates history across a session | Each task is stateless |
+| Human is always in the loop | No human needed |
+| One conversation at a time | Can queue multiple tasks |
+
+Memory still persists — `identity.md` and `memory/notes.md` are loaded for every task. The agent knows who it is and what it's learned. But the conversation history from the last task is gone.
+
+---
+
+## How it works
+
+```
+fs.watch(inbox/)
+    │
+    │  task.txt appears
+    ▼
+renameSync(inbox/task.txt → inbox/._task.txt)   ← atomic claim
+readFileSync → task string
+    │
+    ▼
+runAgent(task)
+  ├── load identity.md
+  ├── load memory/notes.md
+  ├── messages = [{ system }, { user: task }]
+  └── agent loop (reason → act → observe → repeat)
+    │
+    ▼
+writeFileSync(outbox/task.txt, reply)
+rmSync(inbox/._task.txt)                        ← clean up
 ```
 
-**What you're seeing:** The first run, the agent uses `save_note` to write your info to `memory/notes.md`. The second run, it loads that file at startup and knows your name without being told again.
+**Why `renameSync` before reading?** `fs.watch` can fire multiple events for the same file (one for create, one for write). The rename is atomic — whichever event gets there first claims the file. The second event finds the file gone and returns early.
 
-**How it works:**
-1. At startup, check if `memory/notes.md` exists → load into system prompt as "Your notes from previous sessions"
-2. The agent also loads `identity.md` (semantic + episodic combined)
-3. `save_note(content)` appends a timestamped line to `memory/notes.md`
-4. `read_notes()` returns the file contents
-
-**The lesson:** Episodic memory is persistent storage the agent reads AND writes. It's **agent-curated** — the agent decides what to save. This is fundamentally different from semantic memory: no human in the loop. The agent builds its own knowledge over time.
-
-The tradeoff: agent-curated memory can drift, accumulate noise, or save irrelevant things. Human-curated memory is stable but requires a human to maintain it. Real systems use both.
+**Why process existing files on startup?** If a file was dropped while the daemon wasn't running, it would be missed by `fs.watch`. The startup scan catches it.
 
 ---
 
 ## What you built
 
-| Component | What it does | Memory type |
-|-----------|-------------|-------------|
-| `identity.md` | Agent name, personality, rules | Semantic (human-curated) |
-| `memory/notes.md` | Agent-written facts from past sessions | Episodic (agent-curated) |
-| `identity.ts` | Agent loop with identity loaded | Reads semantic memory |
-| `remember.ts` | Agent loop with identity + notes + memory tools | Reads + writes episodic memory |
+| Component | What it does |
+|-----------|-------------|
+| `daemon.ts` | Watches inbox/, runs agent per task, writes to outbox/ |
+| `inbox/` | Drop `.txt` files here to queue tasks |
+| `outbox/` | Replies appear here with the same filename |
+
+From Chapters 1-3, unchanged:
+- `llm.ts` — the LLM client
+- `tools.ts` — sandbox + memory tools
+- `identity.md` — who the agent is
+- `memory/notes.md` — what the agent has learned
 
 ---
 
-## Key concepts
+## Key concept: two clocks
 
-**Four memory types** (two built here, two in later chapters):
+The file watcher and the LLM are on different clocks. The LLM runs when triggered by the file watcher, not by the human. The human's role shifts from "conversation partner" to "task submitter." The agent's role shifts from "respondent" to "worker."
 
-| Type | Who curates | When loaded | Example |
-|------|------------|-------------|---------|
-| **Semantic** | Human | Every run | `identity.md`, `CLAUDE.md` |
-| **Episodic** | Agent | Every run (if exists) | `memory/notes.md`, auto-memory |
-| **Working** | Agent | During a single run | The conversation messages array |
-| **Retrieval** | System | On demand (search) | Vector DB, file search *(Chapter 7)* |
+Same cortex. Same walls. Different relationship.
 
-**The context window constraint.** Everything the agent knows must fit in the context window. You can't load a 500-page manual into every prompt. This constraint forces you to split memory into types: what's always loaded (semantic), what's loaded when available (episodic), what's already in the conversation (working), and what's fetched on demand (retrieval).
-
-**Human-curated vs. agent-curated.** Semantic memory (`identity.md`) is stable — a human wrote it and it doesn't change between runs. Episodic memory (`notes.md`) grows — the agent adds to it every session. This distinction matters: human-curated memory is reliable but doesn't scale; agent-curated memory scales but can accumulate noise.
-
-**Workspace ≠ memory.** The sandbox (`./sandbox/`) is the agent's workspace — files it creates for the current task. Memory (`./memory/`) persists across runs. Same filesystem, different purposes. In NanoClaw, the container filesystem is the workspace; `CLAUDE.md` and auto-memory are the memory.
+This is the central pattern of autonomous agents. In NanoClaw, WhatsApp replaces `fs.watch` — a message arrives, the orchestrator drops it in a queue, the agent picks it up. The inbox is a SQLite table. The outbox is the WhatsApp send API. The pattern is identical.
 
 ---
 
 ## Where this lives in NanoClaw
 
-- **Semantic memory:** `groups/{name}/CLAUDE.md` — each group has a human-curated identity file. The agent reads it every run. You edit it to change the agent's behavior.
-- **Episodic memory:** Agent auto-memory — the agent saves facts about users, preferences, and context across conversations. Loaded into the system prompt each run.
-- **Working memory:** The conversation messages array — everything said in the current session. Lost when the session ends.
-- **Retrieval memory:** Coming in Chapter 7 — searching past conversations, documents, and external knowledge on demand.
+- `src/index.ts:startMessageLoop()` — the message loop (WhatsApp = file watcher)
+- `src/index.ts:processGroupMessages()` — spawn + release logic
+- `src/db.ts` — the inbox (SQLite message queue, not files)
 
-**Next:** Chapter 4 *(coming soon)*
+**Next:** Chapter 5 — The Clock *(give the agent a schedule)*

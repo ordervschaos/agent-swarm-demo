@@ -1,10 +1,11 @@
 {
-  "name": "chapter-3-memory",
+  "name": "chapter-4-autonomy",
   "private": true,
   "type": "module",
   "scripts": {
     "identity": "node --no-deprecation --import tsx/esm identity.ts",
-    "remember": "node --no-deprecation --import tsx/esm remember.ts"
+    "remember": "node --no-deprecation --import tsx/esm remember.ts",
+    "daemon": "node --no-deprecation --import tsx/esm daemon.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.0",
