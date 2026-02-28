@@ -1,0 +1,1 @@
+I have written a haiku to `sandbox/haiku.txt` for you.

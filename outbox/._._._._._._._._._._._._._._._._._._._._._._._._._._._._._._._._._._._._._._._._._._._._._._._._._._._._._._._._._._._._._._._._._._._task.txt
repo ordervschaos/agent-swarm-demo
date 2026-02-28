@@ -1,0 +1,1 @@
+The haiku has been written to `sandbox/haiku.txt`.
