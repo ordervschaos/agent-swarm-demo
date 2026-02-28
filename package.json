@@ -5,7 +5,8 @@
   "scripts": {
     "identity": "node --no-deprecation --import tsx/esm identity.ts",
     "remember": "node --no-deprecation --import tsx/esm remember.ts",
-    "daemon": "node --no-deprecation --import tsx/esm daemon.ts"
+    "daemon": "node --no-deprecation --import tsx/esm daemon.ts",
+    "scheduler": "node --no-deprecation --import tsx/esm scheduler.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.0",

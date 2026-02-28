@@ -1,15 +1,16 @@
-# Chapter 4: Autonomy — The Agent Acts Without Being Asked
+# Chapter 5: The Clock — The Agent Acts on a Schedule
 
-*From reactive to autonomous — same cortex, different input source.*
+*From reactive to proactive — same cortex, different trigger.*
 
-So far the agent only acts when a human types. It's reactive — input comes from stdin, output goes to stdout, and nothing happens without a prompt. Now change one thing: the input source.
+Chapter 4's daemon watches `inbox/` and waits. It only acts when something arrives. Now change one thing: **the trigger**.
 
-Instead of `stdin`, the input channel is a directory: `inbox/`. When a `.txt` file appears, the daemon reads it as the task, runs the agent in-process, and writes the reply to `outbox/`. The human drops a file and walks away.
+Instead of `fs.watch`, the trigger is a clock. The agent has standing orders — tasks defined in code, each with a schedule. A poll loop wakes every few seconds, finds tasks that are due, and runs the agent. No human needed, no file dropped. Time is enough.
 
 ```
-BEFORE (chat.ts):              AFTER (daemon.ts):
-Human types → agent responds   File drops → agent responds
-Human is the trigger           fs.watch is the trigger
+BEFORE (daemon.ts):             AFTER (scheduler.ts):
+File drops → agent responds     Clock ticks → agent runs
+fs.watch is the trigger         setInterval is the trigger
+Reactive — waits for input      Proactive — acts on schedule
 ```
 
 The cortex doesn't change. The tools don't change. Memory doesn't change. The only thing that changes is **what triggers the agent**.
@@ -22,78 +23,92 @@ The cortex doesn't change. The tools don't change. Memory doesn't change. The on
 npm install
 ```
 
-Same API key as Chapters 1-3.
+Same API key as Chapters 1-4.
 
 ---
 
 ## Run
 
 ```bash
-npm run daemon
+npm run scheduler
 ```
 
-Then in another terminal:
+Expected output:
+
+```
+[scheduler] started — 2 task(s) configured
+  heartbeat: every 30s
+  memory-review: every 120s
+
+[scheduler] running "heartbeat"
+  prompt: "Write the current timestamp and a one-line status to sandbox/heartbeat.txt"
+    [1] write_file({"path":"heartbeat.txt","content":"..."})
+[scheduler] "heartbeat" done in 2.3s
+  reply: "Done. I've written the timestamp and status to sandbox/heartbeat.txt."
+
+[scheduler] running "memory-review"
+  prompt: "Read your notes and write a one-paragraph summary to sandbox/summary.txt"
+    [1] read_notes({})
+    [2] write_file({"path":"summary.txt","content":"..."})
+[scheduler] "memory-review" done in 3.1s
+  reply: "Done. I've written a summary of my notes to sandbox/summary.txt."
+```
+
+Both tasks run immediately on startup. Then:
+- `heartbeat` runs again every 30s
+- `memory-review` runs again every 2 minutes
+
+Check the output files:
 
 ```bash
-echo "write a haiku about filesystems to sandbox/haiku.txt" > inbox/task.txt
+cat sandbox/heartbeat.txt
+cat sandbox/summary.txt
 ```
-
-The daemon picks it up, runs the agent, writes the reply to `outbox/task.txt`. Walk away and come back — it'll be done.
-
-```
-[daemon] watching inbox/ for .txt files
-[daemon] replies will appear in outbox/
-
-[inbox] task.txt
-  "write a haiku about filesystems to sandbox/haiku.txt"
-  [1] write_file({"path":"haiku.txt","content":"..."})
-[outbox] task.txt
-  "Done. I wrote a haiku to sandbox/haiku.txt."
-```
-
----
-
-## Each task is independent
-
-The daemon passes `[{role:'user', content: task}]` — a single-turn conversation with no prior history. Spawn → process → release.
-
-This is the key difference from `chat.ts`:
-
-| `chat.ts` (interactive) | `daemon.ts` (autonomous) |
-|------------------------|--------------------------|
-| Accumulates history across a session | Each task is stateless |
-| Human is always in the loop | No human needed |
-| One conversation at a time | Can queue multiple tasks |
-
-Memory still persists — `identity.md` and `memory/notes.md` are loaded for every task. The agent knows who it is and what it's learned. But the conversation history from the last task is gone.
 
 ---
 
 ## How it works
 
 ```
-fs.watch(inbox/)
+setInterval(tick, TICK_MS)
     │
-    │  task.txt appears
+    │  every 5s: wake up
     ▼
-renameSync(inbox/task.txt → inbox/._task.txt)   ← atomic claim
-readFileSync → task string
-    │
-    ▼
-runAgent(task)
-  ├── load identity.md
-  ├── load memory/notes.md
-  ├── messages = [{ system }, { user: task }]
-  └── agent loop (reason → act → observe → repeat)
-    │
-    ▼
-writeFileSync(outbox/task.txt, reply)
-rmSync(inbox/._task.txt)                        ← clean up
+tick()
+  for each task:
+    if now >= nextRun[id]:
+      runAgent(task.prompt)
+      nextRun[id] = now + task.every
 ```
 
-**Why `renameSync` before reading?** `fs.watch` can fire multiple events for the same file (one for create, one for write). The rename is atomic — whichever event gets there first claims the file. The second event finds the file gone and returns early.
+**One loop, not one timer per task.** A common mistake is `setInterval(runTask, every)` for each task individually. That works until you have 20 tasks — then you have 20 independent timers, no coordination, and concurrent LLM calls that pile up. One central loop checks all tasks and runs them sequentially.
 
-**Why process existing files on startup?** If a file was dropped while the daemon wasn't running, it would be missed by `fs.watch`. The startup scan catches it.
+**Run immediately on startup.** `nextRun` starts at `0` for every task, so the first `tick()` call (before `setInterval` fires) runs everything. The user sees output right away instead of waiting for the first interval.
+
+**Sequential runs prevent pile-up.** `tick()` awaits each `runAgent` call before moving to the next task. If the LLM is slow, tasks queue up naturally rather than spawning concurrent requests.
+
+---
+
+## The tasks array
+
+```typescript
+const TASKS: Task[] = [
+  {
+    id: 'heartbeat',
+    prompt: 'Write the current timestamp and a one-line status to sandbox/heartbeat.txt',
+    every: 30_000,   // 30s
+  },
+  {
+    id: 'memory-review',
+    prompt: 'Read your notes and write a one-paragraph summary to sandbox/summary.txt',
+    every: 2 * 60_000,  // 2 min
+  },
+]
+```
+
+Standing orders. The agent doesn't decide what to do or when — the task array decides. The agent just executes.
+
+To add a task: push to the array. To change frequency: change `every`. No cron syntax, no config files, no UI.
 
 ---
 
@@ -101,11 +116,12 @@ rmSync(inbox/._task.txt)                        ← clean up
 
 | Component | What it does |
 |-----------|-------------|
-| `daemon.ts` | Watches inbox/, runs agent per task, writes to outbox/ |
-| `inbox/` | Drop `.txt` files here to queue tasks |
-| `outbox/` | Replies appear here with the same filename |
+| `scheduler.ts` | Defines tasks, runs poll loop, invokes agent on schedule |
+| `TASKS` array | Standing orders — what to do and how often |
+| `nextRun` map | In-memory schedule state — when each task runs next |
+| `tick()` | Checks all tasks, runs due ones sequentially |
 
-From Chapters 1-3, unchanged:
+From Chapters 1-4, unchanged:
 - `llm.ts` — the LLM client
 - `tools.ts` — sandbox + memory tools
 - `identity.md` — who the agent is
@@ -113,20 +129,43 @@ From Chapters 1-3, unchanged:
 
 ---
 
-## Key concept: two clocks
+## Key concept: proactive vs reactive
 
-The file watcher and the LLM are on different clocks. The LLM runs when triggered by the file watcher, not by the human. The human's role shifts from "conversation partner" to "task submitter." The agent's role shifts from "respondent" to "worker."
+The daemon (Chapter 4) is reactive — it responds to events. The scheduler is proactive — it initiates action on its own clock. Both use the same agent loop. The difference is entirely in what calls `runAgent`.
 
-Same cortex. Same walls. Different relationship.
+| `daemon.ts` (reactive) | `scheduler.ts` (proactive) |
+|------------------------|---------------------------|
+| Trigger: file appears | Trigger: time elapses |
+| Task source: human drops a file | Task source: hardcoded task array |
+| Waits for input | Acts without input |
+| Stateless per task | Stateless per task (same) |
 
-This is the central pattern of autonomous agents. In NanoClaw, WhatsApp replaces `fs.watch` — a message arrives, the orchestrator drops it in a queue, the agent picks it up. The inbox is a SQLite table. The outbox is the WhatsApp send API. The pattern is identical.
+An agent that only reacts is a tool. An agent that acts on a schedule is autonomous.
 
 ---
 
 ## Where this lives in NanoClaw
 
-- `src/index.ts:startMessageLoop()` — the message loop (WhatsApp = file watcher)
-- `src/index.ts:processGroupMessages()` — spawn + release logic
-- `src/db.ts` — the inbox (SQLite message queue, not files)
+`src/task-scheduler.ts:startSchedulerLoop()` — the identical pattern:
 
-**Next:** Chapter 5 — The Clock *(give the agent a schedule)*
+```typescript
+const loop = async () => {
+  const dueTasks = getDueTasks()          // ← query DB instead of checking nextRun map
+  for (const task of dueTasks) {
+    await runTask(task, deps)             // ← sequential, same as here
+  }
+  setTimeout(loop, SCHEDULER_POLL_INTERVAL)
+}
+loop()
+```
+
+The differences are cosmetic:
+- SQLite (`getDueTasks()`) replaces the in-memory `nextRun` map — persists across restarts
+- `setTimeout(loop, interval)` re-schedules each iteration (drift-free) vs `setInterval` (fixed cadence)
+- Tasks come from the DB, not a hardcoded array — can be added/paused at runtime
+
+The core pattern is the same: **one loop, sequential execution, clock as trigger**.
+
+---
+
+**Next:** Chapter 6 — The Immune System *(rate limits, retries, circuit breakers)*
