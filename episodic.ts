@@ -13,10 +13,10 @@
  */
 
 import { loadPersona, buildSystemPrompt, allTools, runAgent } from './agent.js'
-import { loadNotes } from './memory.js'
+import { loadNotes } from './memory/memory.js'
 
 const identity = loadPersona()
-console.log(`[memory] Loaded persona from persona.md (${identity.length} bytes)`)
+console.log(`[memory] Loaded persona from memory/persona.md (${identity.length} bytes)`)
 
 const notes = loadNotes()
 if (notes) {

@@ -11,7 +11,7 @@ import { existsSync, readFileSync } from 'fs'
 import { resolve } from 'path'
 import { llm, MODEL } from './llm.js'
 import { listFilesTool, readFileTool, writeFileTool, executeAction } from './actions.js'
-import { saveNoteTool, readNotesTool, executeMemoryTool } from './memory.js'
+import { saveNoteTool, readNotesTool, executeMemoryTool } from './memory/memory.js'
 import type { ChatCompletionTool, ChatCompletionMessageParam } from 'openai/resources/index'
 
 export const MAX_ITERATIONS = 15
@@ -23,9 +23,9 @@ function executeTool(name: string, args: Record<string, string>): string {
   return executeAction(name, args) ?? executeMemoryTool(name, args) ?? `Unknown tool: ${name}`
 }
 
-/** Load persona.md from the given path (defaults to ./persona.md). Returns '' if missing. */
+/** Load persona.md from the given path (defaults to ./memory/persona.md). Returns '' if missing. */
 export function loadPersona(path?: string): string {
-  const p = path ?? resolve('persona.md')
+  const p = path ?? resolve('memory/persona.md')
   return existsSync(p) ? readFileSync(p, 'utf-8') : ''
 }
 

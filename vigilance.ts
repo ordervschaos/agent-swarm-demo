@@ -15,7 +15,7 @@
 import { watch, readFileSync, writeFileSync, renameSync, rmSync, mkdirSync, existsSync, readdirSync } from 'fs'
 import { resolve } from 'path'
 import { loadPersona, buildSystemPrompt, allTools, runAgent } from './agent.js'
-import { loadNotes } from './memory.js'
+import { loadNotes } from './memory/memory.js'
 
 const INBOX  = resolve('inbox')
 const OUTBOX = resolve('outbox')

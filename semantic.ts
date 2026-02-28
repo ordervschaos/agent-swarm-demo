@@ -16,7 +16,7 @@
 import { loadPersona, buildSystemPrompt, actionTools, runAgent } from './agent.js'
 
 const identity = loadPersona()
-console.log(`[memory] Loaded persona from persona.md (${identity.length} bytes)\n`)
+console.log(`[memory] Loaded persona from memory/persona.md (${identity.length} bytes)\n`)
 
 const prompt = process.argv[2] || 'Introduce yourself and tell me what you can do.'
 const systemPrompt = buildSystemPrompt(identity, null)
