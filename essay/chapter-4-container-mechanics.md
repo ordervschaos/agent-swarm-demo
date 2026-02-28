@@ -18,7 +18,7 @@ chat.ts  ← runs on your machine (the host)
 docker run tutorial-agent  ← runs inside a container (isolated)
 ```
 
-`chat.ts` never imports `llm.ts` or `tools.ts`. It has no LLM code at all. It's a shell: it reads your input, spawns a container, pipes data in, reads data back out, and prints the reply. Everything involving the LLM — the agent loop, the tool calls, the API request — happens inside the container.
+`chat.ts` never imports `llm.ts`, `actions.ts`, or `memory.ts`. It has no LLM code at all. It's a shell: it reads your input, spawns a container, pipes data in, reads data back out, and prints the reply. Everything involving the LLM — the agent loop, the tool calls, the API request — happens inside the container.
 
 ---
 
@@ -33,7 +33,7 @@ WORKDIR /agent          # everything lives at /agent inside the container
 COPY package*.json ./
 RUN npm install         # installs openai, tsx, dotenv, etc.
 
-COPY llm.ts tools.ts container-entry.ts ./   # the agent source
+COPY llm.ts actions.ts memory.ts container-entry.ts ./   # the agent source
 
 CMD ["node", "--no-deprecation", "--import", "tsx/esm", "container-entry.ts"]
 ```
@@ -45,11 +45,12 @@ After `docker build`, the image contains:
   node_modules/        ← installed at build time
   package.json
   llm.ts               ← the LLM client (baked in)
-  tools.ts             ← tool definitions + executors (baked in)
+  actions.ts           ← sandbox tools: senses + limbs (baked in)
+  memory.ts            ← episodic memory tools (baked in)
   container-entry.ts   ← the entrypoint (baked in)
 ```
 
-**`identity.md` is NOT here.** Neither is `memory/` or `sandbox/`. Those are mounted at runtime — a different mechanism explained below. The image is just the logic. The data arrives separately each run.
+**`persona.md` is NOT here.** Neither is `memory/` or `sandbox/`. Those are mounted at runtime — a different mechanism explained below. The image is just the logic. The data arrives separately each run.
 
 ---
 
@@ -80,23 +81,27 @@ So the key lives on the host (in `.env.local`), gets loaded by `chat.ts`, and ge
 
 ---
 
-## How `tools.ts` is used inside the container
+## How `actions.ts` is used inside the container
 
-`tools.ts` defines the tools the LLM can call. Its two key facts:
+`actions.ts` defines the sandbox tools the LLM can call. Its key fact:
 
 ```typescript
-// tools.ts:14 — sandbox path is RELATIVE, resolved at runtime
+// actions.ts — sandbox path is RELATIVE, resolved at runtime
 const SANDBOX = resolve('sandbox')   // → /agent/sandbox inside the container
+```
 
-// tools.ts:34-35 — memory path is also relative
+`memory.ts` does the same for memory:
+
+```typescript
+// memory.ts — memory path is also relative
 const MEMORY_DIR = resolve('memory')
 const NOTES_FILE = resolve(MEMORY_DIR, 'notes.md')
 ```
 
-When `tools.ts` runs inside the container, `resolve('sandbox')` resolves to `/agent/sandbox` because the working directory is `/agent` (set by `WORKDIR` in the Dockerfile). That directory is a volume mount — it points to `./sandbox/` on your host. Same for `memory/`.
+When these run inside the container, `resolve('sandbox')` resolves to `/agent/sandbox` because the working directory is `/agent` (set by `WORKDIR` in the Dockerfile). That directory is a volume mount — it points to `./sandbox/` on your host. Same for `memory/`.
 
 So when the agent calls `write_file`:
-1. `tools.ts` receives the call, resolves the path to `/agent/sandbox/poem.txt`
+1. `actions.ts` receives the call, resolves the path to `/agent/sandbox/poem.txt`
 2. It writes the file at `/agent/sandbox/poem.txt` inside the container
 3. Because `/agent/sandbox` is a volume mount, that write immediately appears as `./sandbox/poem.txt` on your host
 
@@ -112,7 +117,7 @@ When `docker run` spawns a container with the mounts from `chat.ts`:
 // chat.ts:44-46
 '--volume', `${SANDBOX}:/agent/sandbox`,
 '--volume', `${MEMORY}:/agent/memory`,
-'--volume', `${IDENTITY}:/agent/identity.md:ro`,
+'--volume', `${PERSONA}:/agent/persona.md:ro`,
 ```
 
 The container sees this filesystem at `/agent/`:
@@ -122,11 +127,12 @@ The container sees this filesystem at `/agent/`:
   node_modules/          ← from the image (baked in)
   package.json           ← from the image (baked in)
   llm.ts                 ← from the image (baked in)
-  tools.ts               ← from the image (baked in)
+  actions.ts             ← from the image (baked in)
+  memory.ts              ← from the image (baked in)
   container-entry.ts     ← from the image (baked in)
   sandbox/               ← MOUNTED from host: ./sandbox/  (read-write)
   memory/                ← MOUNTED from host: ./memory/   (read-write)
-  identity.md            ← MOUNTED from host: ./identity.md  (read-only)
+  persona.md             ← MOUNTED from host: ./persona.md  (read-only)
 ```
 
 Everything on your host that wasn't mounted — `chat.ts`, `llm.ts` on the host, your home directory, your OS — simply does not appear anywhere in this filesystem. It isn't hidden or locked. It doesn't exist from the container's perspective.
@@ -179,8 +185,8 @@ Then it builds the system prompt from the mounted files:
 
 ```typescript
 // container-entry.ts:31-41
-const identity = existsSync(resolve('identity.md'))
-  ? readFileSync(resolve('identity.md'), 'utf-8')
+const identity = existsSync(resolve('persona.md'))
+  ? readFileSync(resolve('persona.md'), 'utf-8')
   : ''
 const notes = loadNotes()    // reads /agent/memory/notes.md if it exists
 
@@ -192,7 +198,7 @@ You are a helpful agent. Use your tools to accomplish the task...`
 if (notes) systemPrompt += `\n\n---\n\nYour notes from previous sessions:\n${notes}`
 ```
 
-`identity.md` is read from the mount at `/agent/identity.md`. Notes are read from `/agent/memory/notes.md`. Neither exists in the image — both come from the host via mounts. This is how the agent's identity and memory survive across container runs: the container is ephemeral, the mounts persist.
+`persona.md` is read from the mount at `/agent/persona.md`. Notes are read from `/agent/memory/notes.md`. Neither exists in the image — both come from the host via mounts. This is how the agent's persona and memory survive across container runs: the container is ephemeral, the mounts persist.
 
 Then it runs the agent loop:
 
@@ -273,7 +279,7 @@ chat.ts:41   docker run --rm --interactive \
                --env GEMINI_API_KEY=... \
                --volume ./sandbox:/agent/sandbox \
                --volume ./memory:/agent/memory \
-               --volume ./identity.md:/agent/identity.md:ro \
+               --volume ./persona.md:/agent/persona.md:ro \
                tutorial-agent
     │
     ├── chat.ts:50  docker.stdin.write(JSON.stringify(history))
@@ -282,7 +288,7 @@ chat.ts:41   docker run --rm --interactive \
     │   [container boots, runs container-entry.ts]
     │
     ├── entry:24    reads stdin → parses history JSON
-    ├── entry:31    reads /agent/identity.md from mount
+    ├── entry:31    reads /agent/persona.md from mount
     ├── entry:34    reads /agent/memory/notes.md from mount (if any)
     ├── entry:43    builds messages = [system, ...history]
     │
@@ -290,7 +296,7 @@ chat.ts:41   docker run --rm --interactive \
     │               → LLM returns tool_call: write_file("poem.txt", "...")
     │
     ├── entry:70    executeTool("write_file", { path: "poem.txt", content: "..." })
-    │               tools.ts writes to /agent/sandbox/poem.txt
+    │               actions.ts writes to /agent/sandbox/poem.txt
     │               ↕  (volume mount — same as ./sandbox/poem.txt on host)
     │
     ├── entry:53    llm.chat.completions.create(...)  [second iteration]
@@ -330,7 +336,7 @@ The container is ephemeral — born per turn, killed after. So it can't hold sta
 
 `chat.ts` keeps the `history` array in memory across the session. On every turn it sends the entire history to the container. The container rebuilds context from scratch each time: reads identity from the mount, reads notes from the mount, appends the full history from stdin. From the LLM's perspective, it sees a complete, coherent conversation — it doesn't know it's being reconstructed from scratch each turn.
 
-This is also why `identity.md` and `memory/notes.md` are mounts instead of baked into the image. The image is fixed at build time. Mounts are runtime-resolved, so different groups (in NanoClaw) can have different identities and different memory files, all using the same image.
+This is also why `persona.md` and `memory/notes.md` are mounts instead of baked into the image. The image is fixed at build time. Mounts are runtime-resolved, so different groups (in NanoClaw) can have different personas and different memory files, all using the same image.
 
 ---
 
@@ -339,10 +345,11 @@ This is also why `identity.md` and `memory/notes.md` are mounts instead of baked
 | Thing | Where it lives | Why |
 |-------|---------------|-----|
 | `llm.ts` | Baked into image | Logic — doesn't change per session |
-| `tools.ts` | Baked into image | Logic — doesn't change per session |
+| `actions.ts` | Baked into image | Logic — doesn't change per session |
+| `memory.ts` | Baked into image | Logic — doesn't change per session |
 | `container-entry.ts` | Baked into image | Logic — doesn't change per session |
 | `node_modules/` | Baked into image | Dependencies — installed at build time |
-| `identity.md` | Mounted (read-only) | Identity — different per group, survives rebuilds |
+| `persona.md` | Mounted (read-only) | Persona — different per group, survives rebuilds |
 | `memory/notes.md` | Mounted (read-write) | Persistence — agent writes here, survives container exit |
 | `sandbox/` | Mounted (read-write) | Workspace — agent writes here, visible on host |
 | API keys | Environment variable | Secrets — never in the image, forwarded from host env |

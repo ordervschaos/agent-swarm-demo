@@ -177,7 +177,7 @@ The cortex is smart but amnesiac. Memory is **external** to the LLM. The context
 
 **Build (4 sub-steps):**
 
-- **Semantic memory** — `identity.md`. Loaded into system prompt every invocation.
+- **Semantic memory** — `persona.md`. Loaded into system prompt every invocation.
 - **Episodic memory** — `memory/notes.md`. The agent writes notes to itself. Loaded every invocation.
 - **Working memory** — Conversation history. The current session is the context window.
 - **Procedural memory** — Skills. Markdown files describing workflows. Loaded on demand.
@@ -203,10 +203,10 @@ The cortex doesn't change. The input source does. Instead of `stdin`, the input 
 
 **Each task is independent.** The daemon passes `[{role:'user', content: task}]` — a single-turn conversation. No shared history. Spawn → process → release. This is the key difference from `chat.ts`: the REPL accumulates history across a session; the daemon treats each task as isolated.
 
-**Build:** `daemon.ts` (~80 lines). `fs.watch` on `inbox/`. A `processing` Set to prevent double-processing. `renameSync` before spawning — move the file out of inbox before processing.
+**Build:** `vigilance.ts` (~80 lines). `fs.watch` on `inbox/`. A `processing` Set to prevent double-processing. `renameSync` before spawning — move the file out of inbox before processing.
 
 ```
-npm run daemon
+npm run vigilance
 
 # in another terminal:
 echo "write a haiku about filesystems to sandbox/haiku.txt" > inbox/task.txt
@@ -285,18 +285,18 @@ Three things cross the fence, and only these three:
 |------|-----------|----------------|
 | `sandbox/` | read-write | `/agent/sandbox` inside the container |
 | `memory/` | read-write | `/agent/memory` inside the container |
-| `identity.md` | read-only | `/agent/identity.md` inside the container |
+| `persona.md` | read-only | `/agent/persona.md` inside the container |
 
 **The wall vs the guard distinction:** A guard detects a threat and responds. A wall exists before any threat. You don't need to convince the agent not to delete your OS — it can't see your OS. The walls were built before the cortex booted.
 
-**Build:** `Dockerfile` + `container-entry.ts` (stdin→agent→stdout, runs inside) + updated `chat.ts` and `daemon.ts` (spawn container instead of running in-process). Each organism in the swarm gets its own mounted `sandbox/` and `memory/`. The container image is shared; the mounted data is isolated.
+**Build:** `Dockerfile` + `container-entry.ts` (stdin→agent→stdout, runs inside) + updated `chat.ts` and `vigilance.ts` (spawn container instead of running in-process). Each organism in the swarm gets its own mounted `sandbox/` and `memory/`. The container image is shared; the mounted data is isolated.
 
 ```
 npm run build-container
 npm run chat
 
 You: list your files
-Agent: [sees only sandbox/ contents — llm.ts, tools.ts don't exist in its universe]
+Agent: [sees only sandbox/ contents — llm.ts, actions.ts, memory.ts don't exist in its universe]
 ```
 
 **Payoff:** Same swarm. Same schedules. Same memory. But now every agent runs inside walls. A compromised agent can only reach what was explicitly passed through the fence.

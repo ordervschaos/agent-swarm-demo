@@ -2,12 +2,12 @@
 
 *From reactive to proactive — same cortex, different trigger.*
 
-Chapter 4's daemon watches `inbox/` and waits. It only acts when something arrives. Now change one thing: **the trigger**.
+Chapter 4's vigilance loop watches `inbox/` and waits. It only acts when something arrives. Now change one thing: **the trigger**.
 
 Instead of `fs.watch`, the trigger is a clock. The agent has standing orders — tasks defined in code, each with a schedule. A poll loop wakes every few seconds, finds tasks that are due, and runs the agent. No human needed, no file dropped. Time is enough.
 
 ```
-BEFORE (daemon.ts):             AFTER (scheduler.ts):
+BEFORE (vigilance.ts):          AFTER (clock.ts):
 File drops → agent responds     Clock ticks → agent runs
 fs.watch is the trigger         setInterval is the trigger
 Reactive — waits for input      Proactive — acts on schedule
@@ -30,27 +30,27 @@ Same API key as Chapters 1-4.
 ## Run
 
 ```bash
-npm run scheduler
+npm run clock
 ```
 
 Expected output:
 
 ```
-[scheduler] started — 2 task(s) configured
+[clock] started — 2 task(s) configured
   heartbeat: every 30s
   memory-review: every 120s
 
-[scheduler] running "heartbeat"
+[clock] running "heartbeat"
   prompt: "Write the current timestamp and a one-line status to sandbox/heartbeat.txt"
     [1] write_file({"path":"heartbeat.txt","content":"..."})
-[scheduler] "heartbeat" done in 2.3s
+[clock] "heartbeat" done in 2.3s
   reply: "Done. I've written the timestamp and status to sandbox/heartbeat.txt."
 
-[scheduler] running "memory-review"
+[clock] running "memory-review"
   prompt: "Read your notes and write a one-paragraph summary to sandbox/summary.txt"
     [1] read_notes({})
     [2] write_file({"path":"summary.txt","content":"..."})
-[scheduler] "memory-review" done in 3.1s
+[clock] "memory-review" done in 3.1s
   reply: "Done. I've written a summary of my notes to sandbox/summary.txt."
 ```
 
@@ -116,25 +116,26 @@ To add a task: push to the array. To change frequency: change `every`. No cron s
 
 | Component | What it does |
 |-----------|-------------|
-| `scheduler.ts` | Defines tasks, runs poll loop, invokes agent on schedule |
+| `clock.ts` | Defines tasks, runs poll loop, invokes agent on schedule |
 | `TASKS` array | Standing orders — what to do and how often |
 | `nextRun` map | In-memory schedule state — when each task runs next |
 | `tick()` | Checks all tasks, runs due ones sequentially |
 
 From Chapters 1-4, unchanged:
 - `llm.ts` — the LLM client
-- `tools.ts` — sandbox + memory tools
-- `identity.md` — who the agent is
+- `actions.ts` — sandbox tools (senses + limbs)
+- `memory.ts` — episodic memory tools
+- `persona.md` — who the agent is
 - `memory/notes.md` — what the agent has learned
 
 ---
 
 ## Key concept: proactive vs reactive
 
-The daemon (Chapter 4) is reactive — it responds to events. The scheduler is proactive — it initiates action on its own clock. Both use the same agent loop. The difference is entirely in what calls `runAgent`.
+The vigilance loop (Chapter 4) is reactive — it responds to events. The clock is proactive — it initiates action on its own schedule. Both use the same agent loop. The difference is entirely in what calls `runAgent`.
 
-| `daemon.ts` (reactive) | `scheduler.ts` (proactive) |
-|------------------------|---------------------------|
+| `vigilance.ts` (reactive) | `clock.ts` (proactive) |
+|---------------------------|------------------------|
 | Trigger: file appears | Trigger: time elapses |
 | Task source: human drops a file | Task source: hardcoded task array |
 | Waits for input | Acts without input |

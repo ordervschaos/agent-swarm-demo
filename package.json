@@ -1,12 +1,12 @@
 {
-  "name": "chapter-4-autonomy",
+  "name": "tutorial",
   "private": true,
   "type": "module",
   "scripts": {
-    "identity": "node --no-deprecation --import tsx/esm identity.ts",
-    "remember": "node --no-deprecation --import tsx/esm remember.ts",
-    "daemon": "node --no-deprecation --import tsx/esm daemon.ts",
-    "scheduler": "node --no-deprecation --import tsx/esm scheduler.ts"
+    "semantic":  "node --no-deprecation --import tsx/esm semantic.ts",
+    "episodic":  "node --no-deprecation --import tsx/esm episodic.ts",
+    "vigilance": "node --no-deprecation --import tsx/esm vigilance.ts",
+    "clock":     "node --no-deprecation --import tsx/esm clock.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.0",

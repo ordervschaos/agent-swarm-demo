@@ -1,15 +1,14 @@
 /**
- * Tool definitions — sandbox tools from Chapter 2 + memory tools.
+ * Actions — what the agent can do in the sandbox.
  *
- * Sandbox tools (list_files, read_file, write_file) operate on ./sandbox/.
- * Memory tools (save_note, read_notes) operate on ./memory/.
- * Two separate directories: workspace ≠ memory.
+ * Senses: list_files, read_file — perceive the state of the world.
+ * Limbs:  write_file            — change the state of the world.
+ *
+ * All operations are confined to ./sandbox/ via safePath().
  */
 
-import { readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync, appendFileSync } from 'fs'
+import { readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs'
 import { resolve, relative } from 'path'
-
-// --- Sandbox ---
 
 const SANDBOX = resolve('sandbox')
 
@@ -29,12 +28,7 @@ function safePath(input: string): string {
 // Ensure sandbox exists on import
 if (!existsSync(SANDBOX)) mkdirSync(SANDBOX, { recursive: true })
 
-// --- Memory ---
-
-const MEMORY_DIR = resolve('memory')
-const NOTES_FILE = resolve(MEMORY_DIR, 'notes.md')
-
-// --- Tool definitions (JSON schemas for the LLM) ---
+// --- Tool definitions ---
 
 export const listFilesTool = {
   type: 'function' as const,
@@ -81,36 +75,10 @@ export const writeFileTool = {
   },
 }
 
-export const saveNoteTool = {
-  type: 'function' as const,
-  function: {
-    name: 'save_note',
-    description: 'Save a note to persistent memory. Use this when the user tells you something worth remembering for future sessions.',
-    parameters: {
-      type: 'object' as const,
-      properties: {
-        content: { type: 'string', description: 'The note to save' },
-      },
-      required: ['content'],
-    },
-  },
-}
+// --- Execution ---
 
-export const readNotesTool = {
-  type: 'function' as const,
-  function: {
-    name: 'read_notes',
-    description: 'Read all saved notes from persistent memory.',
-    parameters: {
-      type: 'object' as const,
-      properties: {},
-    },
-  },
-}
-
-// --- Tool execution ---
-
-export function executeTool(name: string, args: Record<string, string>): string {
+/** Execute a sandbox action. Returns null if the tool name is not recognized. */
+export function executeAction(name: string, args: Record<string, string>): string | null {
   try {
     if (name === 'list_files') {
       const dir = safePath(args.path || '.')
@@ -126,26 +94,8 @@ export function executeTool(name: string, args: Record<string, string>): string 
       writeFileSync(filePath, args.content)
       return `Wrote ${args.content.length} bytes to ${args.path}`
     }
-    if (name === 'save_note') {
-      if (!existsSync(MEMORY_DIR)) mkdirSync(MEMORY_DIR, { recursive: true })
-      const timestamp = new Date().toISOString().slice(0, 16).replace('T', ' ')
-      const line = `- [${timestamp}] ${args.content}\n`
-      appendFileSync(NOTES_FILE, line)
-      return `Saved note to memory.`
-    }
-    if (name === 'read_notes') {
-      if (!existsSync(NOTES_FILE)) return 'No notes yet.'
-      return readFileSync(NOTES_FILE, 'utf-8') || 'No notes yet.'
-    }
-    return `Unknown tool: ${name}`
+    return null
   } catch (e: any) {
     return `Error: ${e.message}`
   }
-}
-
-/** Load notes from memory file, or return null if none exist. */
-export function loadNotes(): string | null {
-  if (!existsSync(NOTES_FILE)) return null
-  const content = readFileSync(NOTES_FILE, 'utf-8').trim()
-  return content || null
 }
