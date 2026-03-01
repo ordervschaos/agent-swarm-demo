@@ -20,7 +20,7 @@ const MAX_ITERATIONS = 15
 export class Agent {
   readonly config: AgentConfig
   private systemPrompt: string
-  private executeTool: (name: string, args: Record<string, string>) => string
+  private performAction: (name: string, args: Record<string, string>) => string
   verbose = false
 
   constructor(nameOrConfig: string | AgentConfig) {
@@ -29,7 +29,7 @@ export class Agent {
       : nameOrConfig
 
     this.systemPrompt = this.buildSystemPrompt()
-    this.executeTool = createToolExecutor(this.config.sandboxDir, this.config.memoryDir)
+    this.performAction = createToolExecutor(this.config.sandboxDir, this.config.memoryDir)
   }
 
   // ── The life cycle ──────────────────────────────────────────────
@@ -82,7 +82,7 @@ export class Agent {
     const args = JSON.parse(rawArgs)
     if (this.verbose) this.log(`${name}(${JSON.stringify(args)})`)
 
-    const result = this.executeTool(name, args)
+    const result = this.performAction(name, args)
     if (this.verbose) this.log(`→ ${result.slice(0, 200)}${result.length > 200 ? '...' : ''}`)
 
     return result
