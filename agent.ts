@@ -23,10 +23,8 @@ export class Agent {
   private performAction: (name: string, args: Record<string, string>) => string
   verbose = false
 
-  constructor(nameOrConfig: string | AgentConfig) {
-    this.config = typeof nameOrConfig === 'string'
-      ? createDefaultConfig(nameOrConfig)
-      : nameOrConfig
+  constructor(name: string) {
+    this.config = createDefaultConfig(name)
 
     // Waking up
     const identity = this.recallIdentity()
