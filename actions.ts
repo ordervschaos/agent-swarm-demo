@@ -4,29 +4,25 @@
  * Senses: list_files, read_file — perceive the state of the world.
  * Limbs:  write_file            — change the state of the world.
  *
- * All operations are confined to ./sandbox/ via safePath().
+ * createActionExecutor(sandboxDir) returns a bound executor for a specific sandbox.
+ * The default executeAction() uses ./sandbox/ for backward compat.
  */
 
 import { readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs'
 import { resolve, relative } from 'path'
 
-const SANDBOX = resolve('sandbox')
-
 /** Resolve a path and verify it's inside the sandbox. Throws if not. */
-function safePath(input: string): string {
-  const resolved = resolve(SANDBOX, input)
-  const rel = relative(SANDBOX, resolved)
+function safePath(sandbox: string, input: string): string {
+  const resolved = resolve(sandbox, input)
+  const rel = relative(sandbox, resolved)
   if (rel.startsWith('..') || resolve(resolved) !== resolved && rel.startsWith('/')) {
     throw new Error(`Path escapes sandbox: ${input}`)
   }
-  if (!resolved.startsWith(SANDBOX)) {
+  if (!resolved.startsWith(sandbox)) {
     throw new Error(`Path escapes sandbox: ${input}`)
   }
   return resolved
 }
-
-// Ensure sandbox exists on import
-if (!existsSync(SANDBOX)) mkdirSync(SANDBOX, { recursive: true })
 
 // --- Tool definitions ---
 
@@ -77,25 +73,39 @@ export const writeFileTool = {
 
 // --- Execution ---
 
-/** Execute a sandbox action. Returns null if the tool name is not recognized. */
-export function executeAction(name: string, args: Record<string, string>): string | null {
-  try {
-    if (name === 'list_files') {
-      const dir = safePath(args.path || '.')
-      return readdirSync(dir).join('\n') || '(empty directory)'
+/** Create a bound action executor for a specific sandbox directory. */
+export function createActionExecutor(sandboxDir: string): (name: string, args: Record<string, string>) => string | null {
+  if (!existsSync(sandboxDir)) mkdirSync(sandboxDir, { recursive: true })
+
+  return (name: string, args: Record<string, string>): string | null => {
+    try {
+      if (name === 'list_files') {
+        const dir = safePath(sandboxDir, args.path || '.')
+        return readdirSync(dir).join('\n') || '(empty directory)'
+      }
+      if (name === 'read_file') {
+        return readFileSync(safePath(sandboxDir, args.path), 'utf-8')
+      }
+      if (name === 'write_file') {
+        const filePath = safePath(sandboxDir, args.path)
+        const parent = resolve(filePath, '..')
+        if (!existsSync(parent)) mkdirSync(parent, { recursive: true })
+        writeFileSync(filePath, args.content)
+        return `Wrote ${args.content.length} bytes to ${args.path}`
+      }
+      return null
+    } catch (e: any) {
+      return `Error: ${e.message}`
     }
-    if (name === 'read_file') {
-      return readFileSync(safePath(args.path), 'utf-8')
-    }
-    if (name === 'write_file') {
-      const filePath = safePath(args.path)
-      const parent = resolve(filePath, '..')
-      if (!existsSync(parent)) mkdirSync(parent, { recursive: true })
-      writeFileSync(filePath, args.content)
-      return `Wrote ${args.content.length} bytes to ${args.path}`
-    }
-    return null
-  } catch (e: any) {
-    return `Error: ${e.message}`
   }
+}
+
+/** Default executor using ./sandbox/ — backward compat for existing entry points. */
+const defaultSandbox = resolve('sandbox')
+if (!existsSync(defaultSandbox)) mkdirSync(defaultSandbox, { recursive: true })
+const defaultExecutor = createActionExecutor(defaultSandbox)
+
+/** Execute a sandbox action using the default ./sandbox/. Returns null if unrecognized. */
+export function executeAction(name: string, args: Record<string, string>): string | null {
+  return defaultExecutor(name, args)
 }

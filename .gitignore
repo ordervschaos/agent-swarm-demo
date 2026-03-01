@@ -3,4 +3,6 @@ inbox/
 outbox/
 sandbox/
 memory/notes.md
+agents/*/sandbox/
+agents/*/memory/
 .env.local

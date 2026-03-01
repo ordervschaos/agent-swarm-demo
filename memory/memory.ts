@@ -1,18 +1,15 @@
 /**
  * Memory — persistent episodic storage.
  *
- * save_note: append to memory/notes.md — agent writes what it learns.
- * read_notes: read all saved notes     — agent recalls what it learned.
+ * save_note: append to notes.md — agent writes what it learns.
+ * read_notes: read all saved notes — agent recalls what it learned.
  *
- * Separate from the sandbox: memory/ persists what the agent knows;
- * sandbox/ is the workspace for what the agent does.
+ * createMemoryExecutor(memoryDir) returns a bound executor for a specific memory dir.
+ * The default functions use ./memory/ for backward compat.
  */
 
 import { readFileSync, appendFileSync, mkdirSync, existsSync } from 'fs'
 import { resolve } from 'path'
-
-const MEMORY_DIR = resolve('memory')
-const NOTES_FILE = resolve(MEMORY_DIR, 'notes.md')
 
 // --- Tool definitions ---
 
@@ -43,31 +40,50 @@ export const readNotesTool = {
   },
 }
 
-// --- Execution ---
+// --- Parameterized execution ---
 
-/** Execute a memory tool. Returns null if the tool name is not recognized. */
-export function executeMemoryTool(name: string, args: Record<string, string>): string | null {
-  try {
-    if (name === 'save_note') {
-      if (!existsSync(MEMORY_DIR)) mkdirSync(MEMORY_DIR, { recursive: true })
-      const timestamp = new Date().toISOString().slice(0, 16).replace('T', ' ')
-      const line = `- [${timestamp}] ${args.content}\n`
-      appendFileSync(NOTES_FILE, line)
-      return `Saved note to memory.`
+/** Create a bound memory executor for a specific memory directory. */
+export function createMemoryExecutor(memoryDir: string): (name: string, args: Record<string, string>) => string | null {
+  return (name: string, args: Record<string, string>): string | null => {
+    const notesFile = resolve(memoryDir, 'notes.md')
+    try {
+      if (name === 'save_note') {
+        if (!existsSync(memoryDir)) mkdirSync(memoryDir, { recursive: true })
+        const timestamp = new Date().toISOString().slice(0, 16).replace('T', ' ')
+        const line = `- [${timestamp}] ${args.content}\n`
+        appendFileSync(notesFile, line)
+        return `Saved note to memory.`
+      }
+      if (name === 'read_notes') {
+        if (!existsSync(notesFile)) return 'No notes yet.'
+        return readFileSync(notesFile, 'utf-8') || 'No notes yet.'
+      }
+      return null
+    } catch (e: any) {
+      return `Error: ${e.message}`
     }
-    if (name === 'read_notes') {
-      if (!existsSync(NOTES_FILE)) return 'No notes yet.'
-      return readFileSync(NOTES_FILE, 'utf-8') || 'No notes yet.'
-    }
-    return null
-  } catch (e: any) {
-    return `Error: ${e.message}`
   }
 }
 
-/** Load notes from memory file, or return null if none exist. */
-export function loadNotes(): string | null {
-  if (!existsSync(NOTES_FILE)) return null
-  const content = readFileSync(NOTES_FILE, 'utf-8').trim()
+/** Load notes from a specific memory directory. */
+export function loadNotesFrom(memoryDir: string): string | null {
+  const notesFile = resolve(memoryDir, 'notes.md')
+  if (!existsSync(notesFile)) return null
+  const content = readFileSync(notesFile, 'utf-8').trim()
   return content || null
+}
+
+// --- Default (backward compat) ---
+
+const DEFAULT_MEMORY_DIR = resolve('memory')
+const defaultExecutor = createMemoryExecutor(DEFAULT_MEMORY_DIR)
+
+/** Execute a memory tool using the default ./memory/. Returns null if unrecognized. */
+export function executeMemoryTool(name: string, args: Record<string, string>): string | null {
+  return defaultExecutor(name, args)
+}
+
+/** Load notes from the default ./memory/notes.md. */
+export function loadNotes(): string | null {
+  return loadNotesFrom(DEFAULT_MEMORY_DIR)
 }

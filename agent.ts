@@ -1,12 +1,16 @@
 /**
  * Agent — tool arrays, persona loading, system prompt, and the run loop.
+ *
+ * runAgent() accepts an optional AgentConfig to use isolated sandbox/memory.
+ * Without a config, it uses the default ./sandbox/ and ./memory/ paths.
  */
 
 import { existsSync, readFileSync } from 'fs'
 import { resolve } from 'path'
 import { llm, MODEL } from './llm.js'
-import { listFilesTool, readFileTool, writeFileTool, executeAction } from './actions.js'
-import { saveNoteTool, readNotesTool, executeMemoryTool } from './memory/memory.js'
+import { listFilesTool, readFileTool, writeFileTool, executeAction, createActionExecutor } from './actions.js'
+import { saveNoteTool, readNotesTool, executeMemoryTool, createMemoryExecutor } from './memory/memory.js'
+import type { AgentConfig } from './agent-config.js'
 import type { ChatCompletionTool, ChatCompletionMessageParam } from 'openai/resources/index'
 
 export const MAX_ITERATIONS = 15
@@ -14,8 +18,16 @@ export const actionTools: ChatCompletionTool[] = [listFilesTool, readFileTool, w
 export const memoryTools: ChatCompletionTool[] = [saveNoteTool, readNotesTool]
 export const allTools: ChatCompletionTool[] = [...actionTools, ...memoryTools]
 
-function executeTool(name: string, args: Record<string, string>): string {
-  return executeAction(name, args) ?? executeMemoryTool(name, args) ?? `Unknown tool: ${name}`
+/** Build a tool executor for a config, or use defaults. */
+function buildToolExecutor(config?: AgentConfig): (name: string, args: Record<string, string>) => string {
+  if (!config) {
+    // Default: uses ./sandbox/ and ./memory/
+    return (name, args) => executeAction(name, args) ?? executeMemoryTool(name, args) ?? `Unknown tool: ${name}`
+  }
+
+  const execAction = createActionExecutor(config.sandboxDir)
+  const execMemory = createMemoryExecutor(config.memoryDir)
+  return (name, args) => execAction(name, args) ?? execMemory(name, args) ?? `Unknown tool: ${name}`
 }
 
 /** Load persona.md from the given path (defaults to ./memory/persona.md). Returns '' if missing. */
@@ -37,8 +49,12 @@ export async function runAgent(
   prompt: string,
   systemPrompt: string,
   tools: ChatCompletionTool[],
-  verbose = false
+  verbose = false,
+  config?: AgentConfig,
 ): Promise<string> {
+  const maxIter = config?.maxIterations ?? MAX_ITERATIONS
+  const model = config?.model || MODEL
+  const executeTool = buildToolExecutor(config)
   let iterations = 0
 
   const messages: ChatCompletionMessageParam[] = [
@@ -46,15 +62,17 @@ export async function runAgent(
     { role: 'user', content: prompt },
   ]
 
+  const label = config?.name ? `[${config.name}]` : ''
+
   while (true) {
-    const response = await llm.chat.completions.create({ model: MODEL, tools, messages })
+    const response = await llm.chat.completions.create({ model, tools, messages })
     const message = response.choices[0].message
 
     if (!message.tool_calls || message.tool_calls.length === 0) {
       return message.content ?? ''
     }
 
-    if (++iterations > MAX_ITERATIONS) {
+    if (++iterations > maxIter) {
       return `[max iterations reached]`
     }
 
@@ -63,11 +81,11 @@ export async function runAgent(
     for (const call of message.tool_calls) {
       const args = JSON.parse(call.function.arguments)
       if (verbose) {
-        console.log(`[${iterations}] ${call.function.name}(${JSON.stringify(args)})`)
+        console.log(`${label}[${iterations}] ${call.function.name}(${JSON.stringify(args)})`)
       }
       const result = executeTool(call.function.name, args)
       if (verbose) {
-        console.log(`    → ${result.slice(0, 200)}${result.length > 200 ? '...' : ''}\n`)
+        console.log(`${label}    → ${result.slice(0, 200)}${result.length > 200 ? '...' : ''}\n`)
       }
       messages.push({ role: 'tool', tool_call_id: call.id, content: result })
     }

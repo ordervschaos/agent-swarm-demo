@@ -1,19 +1,23 @@
-# Chapter 5: The Clock — The Agent Acts on a Schedule
+# Chapter 6: The Genome — One Blueprint, Many Organisms
 
-*From reactive to proactive — same cortex, different trigger.*
+*From one agent to many — same cortex, different DNA.*
 
-Chapter 4's vigilance loop watches `inbox/` and waits. It only acts when something arrives. Now change one thing: **the trigger**.
+Chapters 1–5 built one agent with hardcoded globals: one sandbox, one memory dir, one identity file, one model. This means you can't run two agents concurrently without them stomping on each other's files and sharing each other's brains.
 
-Instead of `fs.watch`, the trigger is a clock. The agent has standing orders — tasks defined in code, each with a schedule. A poll loop wakes every few seconds, finds tasks that are due, and runs the agent. No human needed, no file dropped. Time is enough.
+Chapter 6 extracts an `AgentConfig` — the "genome" that defines an organism — so multiple agents can run in parallel with full isolation. Different genomes produce different organisms from the same cellular machinery.
 
 ```
-BEFORE (vigilance.ts):          AFTER (clock.ts):
-File drops → agent responds     Clock ticks → agent runs
-fs.watch is the trigger         setInterval is the trigger
-Reactive — waits for input      Proactive — acts on schedule
+BEFORE (hardcoded):             AFTER (AgentConfig):
+┌──────────────┐                ┌──────────────┐  ┌──────────────┐
+│   agent      │                │   atlas       │  │   nova        │
+│   sandbox/   │                │   agents/     │  │   agents/     │
+│   memory/    │                │    atlas/     │  │    nova/      │
+│   persona.md │                │     sandbox/  │  │     sandbox/  │
+└──────────────┘                │     memory/   │  │     memory/   │
+  one of everything             │     identity/ │  │     identity/ │
+                                └──────────────┘  └──────────────┘
+                                  isolated           isolated
 ```
-
-The cortex doesn't change. The tools don't change. Memory doesn't change. The only thing that changes is **what triggers the agent**.
 
 ---
 
@@ -23,92 +27,150 @@ The cortex doesn't change. The tools don't change. Memory doesn't change. The on
 npm install
 ```
 
-Same API key as Chapters 1-4.
+Same API key as previous chapters. If you haven't set one up:
+
+1. Go to https://aistudio.google.com/apikey
+2. Create an API key
+3. Add it to `.env.local`
 
 ---
 
 ## Run
 
 ```bash
-npm run clock
+npm run parallel
+```
+
+Or with a custom prompt:
+
+```bash
+npm run parallel "Write a haiku about your identity to sandbox/haiku.txt"
 ```
 
 Expected output:
 
 ```
-[clock] started — 2 task(s) configured
-  heartbeat: every 30s
-  memory-review: every 120s
+[parallel] Running 2 agents on the same prompt:
+  "Introduce yourself, then write a short file called sandbox/hello.txt with a greeting in your personal style."
 
-[clock] running "heartbeat"
-  prompt: "Write the current timestamp and a one-line status to sandbox/heartbeat.txt"
-    [1] write_file({"path":"heartbeat.txt","content":"..."})
-[clock] "heartbeat" done in 2.3s
-  reply: "Done. I've written the timestamp and status to sandbox/heartbeat.txt."
+[atlas] started
+[atlas][1] write_file({"path":"hello.txt","content":"..."})
+[atlas]    → Wrote 42 bytes to hello.txt
 
-[clock] running "memory-review"
-  prompt: "Read your notes and write a one-paragraph summary to sandbox/summary.txt"
-    [1] read_notes({})
-    [2] write_file({"path":"summary.txt","content":"..."})
-[clock] "memory-review" done in 3.1s
-  reply: "Done. I've written a summary of my notes to sandbox/summary.txt."
+[nova] started
+[nova][1] write_file({"path":"hello.txt","content":"..."})
+[nova]    → Wrote 67 bytes to hello.txt
+
+[atlas] done
+[nova] done
+
+============================================================
+Results (3.2s total):
+============================================================
+
+--- atlas ---
+Atlas here. I've written a greeting to hello.txt.
+
+  sandbox: hello.txt
+
+--- nova ---
+Hey, it's Nova! I just dropped a greeting into hello.txt — go check it out!
+
+  sandbox: hello.txt
+
+Isolation check: each agent's files live in agents/{name}/sandbox/
+  ls agents/atlas/sandbox/
+  ls agents/nova/sandbox/
 ```
 
-Both tasks run immediately on startup. Then:
-- `heartbeat` runs again every 30s
-- `memory-review` runs again every 2 minutes
-
-Check the output files:
+Verify isolation:
 
 ```bash
-cat sandbox/heartbeat.txt
-cat sandbox/summary.txt
+cat agents/atlas/sandbox/hello.txt   # calm, precise
+cat agents/nova/sandbox/hello.txt    # enthusiastic, creative
+```
+
+Different files. Different styles. No cross-contamination.
+
+---
+
+## Existing entry points still work
+
+```bash
+npm start "What can you do?"    # uses default ./sandbox/ and ./memory/
+npm run watch                    # file watcher daemon — unchanged
+npm run schedule                 # scheduled tasks — unchanged
 ```
 
 ---
 
 ## How it works
 
+### AgentConfig — the genome
+
+```typescript
+interface AgentConfig {
+  name: string              // agent identifier (for logs)
+  persona: string           // path to identity file
+  memoryDir: string         // where notes.md lives
+  sandboxDir: string        // isolated workspace
+  model: string             // which LLM model
+  tools: ChatCompletionTool[] // capabilities
+  maxIterations: number     // loop cap
+}
 ```
-setInterval(tick, TICK_MS)
-    │
-    │  every 5s: wake up
-    ▼
-tick()
-  for each task:
-    if now >= nextRun[id]:
-      runAgent(task.prompt)
-      nextRun[id] = now + task.every
+
+`createDefaultConfig(name)` creates the directory tree and returns a config:
+
+```typescript
+const atlas = createDefaultConfig('atlas')
+// atlas.sandboxDir = agents/atlas/sandbox/
+// atlas.memoryDir  = agents/atlas/memory/
+// atlas.persona    = agents/atlas/identity.md
 ```
 
-**One loop, not one timer per task.** A common mistake is `setInterval(runTask, every)` for each task individually. That works until you have 20 tasks — then you have 20 independent timers, no coordination, and concurrent LLM calls that pile up. One central loop checks all tasks and runs them sequentially.
+### Parameterized tools
 
-**Run immediately on startup.** `nextRun` starts at `0` for every task, so the first `tick()` call (before `setInterval` fires) runs everything. The user sees output right away instead of waiting for the first interval.
+Before: `executeAction()` always used `./sandbox/`. Now: `createActionExecutor(sandboxDir)` returns a bound executor for any directory. Same for `createMemoryExecutor(memoryDir)`.
 
-**Sequential runs prevent pile-up.** `tick()` awaits each `runAgent` call before moving to the next task. If the LLM is slow, tasks queue up naturally rather than spawning concurrent requests.
+```typescript
+// Old — hardcoded
+executeAction('write_file', { path: 'hello.txt', content: 'hi' })
+
+// New — parameterized
+const exec = createActionExecutor('/path/to/agents/atlas/sandbox')
+exec('write_file', { path: 'hello.txt', content: 'hi' })
+```
+
+### Parallel execution
+
+```typescript
+const results = await Promise.all(
+  agents.map(({ config, systemPrompt }) =>
+    runAgent(prompt, systemPrompt, allTools, true, config)
+  )
+)
+```
+
+`Promise.all` runs all agents concurrently. Each agent has its own config pointing to its own sandbox and memory. The LLM calls happen in parallel — different organisms, same cellular machinery.
 
 ---
 
-## The tasks array
+## Directory structure
 
-```typescript
-const TASKS: Task[] = [
-  {
-    id: 'heartbeat',
-    prompt: 'Write the current timestamp and a one-line status to sandbox/heartbeat.txt',
-    every: 30_000,   // 30s
-  },
-  {
-    id: 'memory-review',
-    prompt: 'Read your notes and write a one-paragraph summary to sandbox/summary.txt',
-    every: 2 * 60_000,  // 2 min
-  },
-]
+```
+agents/
+  atlas/
+    identity.md     ← calm, precise personality
+    memory/         ← atlas's episodic memory (gitignored)
+    sandbox/        ← atlas's workspace (gitignored)
+  nova/
+    identity.md     ← enthusiastic, creative personality
+    memory/         ← nova's episodic memory (gitignored)
+    sandbox/        ← nova's workspace (gitignored)
 ```
 
-Standing orders. The agent doesn't decide what to do or when — the task array decides. The agent just executes.
-
-To add a task: push to the array. To change frequency: change `every`. No cron syntax, no config files, no UI.
+Each agent has its own directory tree. Isolation is tangible — you can `ls` into each agent's world.
 
 ---
 
@@ -116,57 +178,40 @@ To add a task: push to the array. To change frequency: change `every`. No cron s
 
 | Component | What it does |
 |-----------|-------------|
-| `clock.ts` | Defines tasks, runs poll loop, invokes agent on schedule |
-| `TASKS` array | Standing orders — what to do and how often |
-| `nextRun` map | In-memory schedule state — when each task runs next |
-| `tick()` | Checks all tasks, runs due ones sequentially |
-
-From Chapters 1-4, unchanged:
-- `llm.ts` — the LLM client
-- `actions.ts` — sandbox tools (senses + limbs)
-- `memory.ts` — episodic memory tools
-- `persona.md` — who the agent is
-- `memory/notes.md` — what the agent has learned
+| `agent-config.ts` | `AgentConfig` interface + `createDefaultConfig()` factory |
+| `actions.ts` | `createActionExecutor(sandboxDir)` — parameterized sandbox |
+| `memory/memory.ts` | `createMemoryExecutor(memoryDir)` — parameterized memory |
+| `agent.ts` | `runAgent()` accepts optional config for isolated execution |
+| `parallel-demo.ts` | `Promise.all` demo with 2 isolated agents |
+| `agents/atlas/identity.md` | Atlas persona — calm and precise |
+| `agents/nova/identity.md` | Nova persona — enthusiastic and creative |
 
 ---
 
-## Key concept: proactive vs reactive
+## Key concept: what varies vs what's shared
 
-The vigilance loop (Chapter 4) is reactive — it responds to events. The clock is proactive — it initiates action on its own schedule. Both use the same agent loop. The difference is entirely in what calls `runAgent`.
+| Shared (cellular machinery) | Varies (genome) |
+|------------------------------|-----------------|
+| LLM client (`llm.ts`) | Identity file path |
+| Tool definitions (schemas) | Sandbox directory |
+| Agent loop (`runAgent`) | Memory directory |
+| System prompt template | Model choice |
+| | Max iterations |
 
-| `vigilance.ts` (reactive) | `clock.ts` (proactive) |
-|---------------------------|------------------------|
-| Trigger: file appears | Trigger: time elapses |
-| Task source: human drops a file | Task source: hardcoded task array |
-| Waits for input | Acts without input |
-| Stateless per task | Stateless per task (same) |
-
-An agent that only reacts is a tool. An agent that acts on a schedule is autonomous.
+The agent loop doesn't know or care which agent it's running. It receives a config and operates on those paths. This is the same pattern as biological cells: every cell has the same machinery (ribosomes, mitochondria), but different DNA produces different organisms.
 
 ---
 
 ## Where this lives in NanoClaw
 
-`src/task-scheduler.ts:startSchedulerLoop()` — the identical pattern:
+- **AgentConfig:** `groups/{name}/` — each WhatsApp group is an agent with its own config
+- **Isolated sandbox:** Each group gets its own container filesystem
+- **Isolated memory:** `groups/{name}/CLAUDE.md` — per-group identity and episodic memory
+- **Parallel execution:** Multiple groups can have active agent runs simultaneously
+- **Same cortex:** All groups use the same LLM client and agent loop
 
-```typescript
-const loop = async () => {
-  const dueTasks = getDueTasks()          // ← query DB instead of checking nextRun map
-  for (const task of dueTasks) {
-    await runTask(task, deps)             // ← sequential, same as here
-  }
-  setTimeout(loop, SCHEDULER_POLL_INTERVAL)
-}
-loop()
-```
-
-The differences are cosmetic:
-- SQLite (`getDueTasks()`) replaces the in-memory `nextRun` map — persists across restarts
-- `setTimeout(loop, interval)` re-schedules each iteration (drift-free) vs `setInterval` (fixed cadence)
-- Tasks come from the DB, not a hardcoded array — can be added/paused at runtime
-
-The core pattern is the same: **one loop, sequential execution, clock as trigger**.
+The genome pattern is how NanoClaw scales from one group to many without agents interfering with each other.
 
 ---
 
-**Next:** Chapter 6 — The Immune System *(rate limits, retries, circuit breakers)*
+**Next:** Chapter 7 — The Swarm *(agent-to-agent communication)*
