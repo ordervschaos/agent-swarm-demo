@@ -28,6 +28,7 @@ export interface Stimulus {
 export interface Cue {
   id: string
   sensor: Sensor
+  agent?: string            // agent name (uses default if omitted)
   skill?: string            // path to a .md skill file (prompt template)
   respond?: (stimulus: Stimulus) => string  // custom response builder
 }
@@ -37,7 +38,8 @@ export interface Cue {
 const TICK_INTERVAL = 5_000
 
 export class Attention {
-  private agent: Agent
+  private defaultAgent: Agent
+  private agents: Record<string, Agent> = {}
   private cues: Cue[]
   private tickTimer: ReturnType<typeof setInterval> | null = null
   private watchers: ReturnType<typeof watch>[] = []
@@ -45,8 +47,17 @@ export class Attention {
   private processing = new Set<string>()
 
   constructor(agent: Agent, cues: Cue[]) {
-    this.agent = agent
+    this.defaultAgent = agent
+    this.agents[agent.config.name] = agent
     this.cues = cues
+  }
+
+  private agentFor(cue: Cue): Agent {
+    if (!cue.agent) return this.defaultAgent
+    if (!this.agents[cue.agent]) {
+      this.agents[cue.agent] = new Agent(cue.agent)
+    }
+    return this.agents[cue.agent]
   }
 
   /** Start vigilance — begin monitoring all cues. */
@@ -98,7 +109,7 @@ export class Attention {
       console.log(`[${cue.id}] firing`)
 
       try {
-        const reply = await this.agent.deliberate(prompt)
+        const reply = await this.agentFor(cue).deliberate(prompt)
         console.log(`[${cue.id}] ${reply.slice(0, 100)}${reply.length > 100 ? '...' : ''}`)
       } catch (e: any) {
         console.error(`[${cue.id}] error: ${e.message}`)
@@ -142,7 +153,7 @@ export class Attention {
       const prompt = this.buildPrompt(cue, stimulus)
 
       try {
-        const reply = await this.agent.deliberate(prompt)
+        const reply = await this.agentFor(cue).deliberate(prompt)
         writeFileSync(resolve(outbox, filename), reply)
         console.log(`[outbox] ${filename}: ${reply.slice(0, 80)}${reply.length > 80 ? '...' : ''}`)
       } catch (e: any) {
