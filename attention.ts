@@ -38,7 +38,7 @@ export interface Cue {
 const TICK_INTERVAL = 5_000
 
 export class Attention {
-  private defaultAgent: Agent
+  private defaultName: string
   private agents: Record<string, Agent> = {}
   private cues: Cue[]
   private tickTimer: ReturnType<typeof setInterval> | null = null
@@ -46,18 +46,17 @@ export class Attention {
   private nextRun: Record<string, number> = {}
   private processing = new Set<string>()
 
-  constructor(agent: Agent, cues: Cue[]) {
-    this.defaultAgent = agent
-    this.agents[agent.config.name] = agent
+  constructor(cues: Cue[]) {
+    this.defaultName = 'default'
     this.cues = cues
   }
 
   private agentFor(cue: Cue): Agent {
-    if (!cue.agent) return this.defaultAgent
-    if (!this.agents[cue.agent]) {
-      this.agents[cue.agent] = new Agent(cue.agent)
+    const name = cue.agent || this.defaultName
+    if (!this.agents[name]) {
+      this.agents[name] = new Agent(name)
     }
-    return this.agents[cue.agent]
+    return this.agents[name]
   }
 
   /** Start vigilance — begin monitoring all cues. */
