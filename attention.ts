@@ -38,7 +38,6 @@ export interface Cue {
 const TICK_INTERVAL = 5_000
 
 export class Attention {
-  private defaultName: string
   private agents: Record<string, Agent> = {}
   private cues: Cue[]
   private tickTimer: ReturnType<typeof setInterval> | null = null
@@ -47,12 +46,11 @@ export class Attention {
   private processing = new Set<string>()
 
   constructor(cues: Cue[]) {
-    this.defaultName = 'default'
     this.cues = cues
   }
 
   private agentFor(cue: Cue): Agent {
-    const name = cue.agent || this.defaultName
+    const name = cue.agent || 'default'
     if (!this.agents[name]) {
       this.agents[name] = new Agent(name)
     }
