@@ -18,6 +18,7 @@ export interface AgentConfig {
   persona: string           // path to identity.md / persona.md
   memoryDir: string         // where notes.md lives
   sandboxDir: string        // isolated workspace
+  inboxDir: string          // where incoming messages land
   model: string             // which LLM model ('' = use default from llm.ts)
   tools: ChatCompletionTool[] // capabilities
   maxIterations: number     // loop cap
@@ -31,9 +32,10 @@ export function createDefaultConfig(name: string): AgentConfig {
   const agentRoot = resolve('agents', name)
   const memoryDir = resolve(agentRoot, 'memory')
   const sandboxDir = resolve(agentRoot, 'sandbox')
+  const inboxDir = resolve(agentRoot, 'inbox')
   const persona = resolve(agentRoot, 'identity.md')
 
-  for (const dir of [memoryDir, sandboxDir]) {
+  for (const dir of [memoryDir, sandboxDir, inboxDir]) {
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
   }
 
@@ -42,6 +44,7 @@ export function createDefaultConfig(name: string): AgentConfig {
     persona,
     memoryDir,
     sandboxDir,
+    inboxDir,
     model: '',
     tools: allTools,
     maxIterations: 15,

@@ -22,6 +22,16 @@ export const cues: Cue[] = [
   {
     id: 'inbox',
     agent: 'default',
-    sensor: { type: 'inbox', dir: 'inbox', pattern: '*.txt' },
+    sensor: { type: 'inbox', dir: 'agents/default/inbox', pattern: '*.txt' },
+  },
+  {
+    id: 'atlas-inbox',
+    agent: 'atlas',
+    sensor: { type: 'inbox', dir: 'agents/atlas/inbox', pattern: '*.txt' },
+  },
+  {
+    id: 'nova-inbox',
+    agent: 'nova',
+    sensor: { type: 'inbox', dir: 'agents/nova/inbox', pattern: '*.txt' },
   },
 ]

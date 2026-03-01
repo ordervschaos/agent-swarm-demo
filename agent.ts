@@ -31,7 +31,7 @@ export class Agent {
     const memories = this.recallMemories()
     this.awareness = this.formAwareness(identity, memories)
 
-    this.performAction = createToolExecutor(this.config.sandboxDir, this.config.memoryDir)
+    this.performAction = createToolExecutor(this.config.sandboxDir, this.config.memoryDir, this.config.name)
   }
 
   // ── Deliberation ─────────────────────────────────────────────────
@@ -119,6 +119,9 @@ export class Agent {
       'When you have the final answer, respond with text (no tool call).',
       '',
       'When the user tells you something worth remembering for future sessions, use save_note to record it.',
+      '',
+      'You can communicate with other agents using send_message and list_agents.',
+      'Use list_agents to discover available agents, then send_message to reach them.',
     ].join('\n')
     if (memories) awareness += `\n\n---\n\nYour notes from previous sessions:\n${memories}`
 

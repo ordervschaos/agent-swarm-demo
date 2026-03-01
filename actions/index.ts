@@ -8,6 +8,7 @@
 
 import * as files from './files.js'
 import * as memory from './memory.js'
+import * as messaging from './messaging.js'
 import type { ChatCompletionTool } from 'openai/resources/index'
 
 export { loadNotes } from './memory.js'
@@ -19,7 +20,7 @@ interface ActionModule {
   createHandler: (...args: any[]) => Handler
 }
 
-const actionModules: ActionModule[] = [files, memory]
+const actionModules: ActionModule[] = [files, memory, messaging]
 
 /** All tool definitions, collected from every action module. */
 export const allTools: ChatCompletionTool[] = actionModules.flatMap(m => m.tools)
@@ -28,10 +29,12 @@ export const allTools: ChatCompletionTool[] = actionModules.flatMap(m => m.tools
 export function createToolExecutor(
   sandboxDir: string,
   memoryDir: string,
+  agentName: string,
 ): (name: string, args: Record<string, string>) => string {
   const handlers: Handler[] = [
     files.createHandler(sandboxDir),
     memory.createHandler(memoryDir),
+    messaging.createHandler(agentName),
   ]
 
   return (name, args) => {
