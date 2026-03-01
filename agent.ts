@@ -48,7 +48,7 @@ export class Agent {
 
       // Has the agent reached a conclusion?
       const wantsToAct = message.tool_calls && message.tool_calls.length > 0
-      if (!wantsToAct) return this.conclude(message.content)
+      if (!wantsToAct) return this.conclude(message.content, cycle)
 
       // Not yet — act, observe, and think again
       messages.push(message)
@@ -58,11 +58,12 @@ export class Agent {
       }
     }
 
-    return this.conclude(null)
+    return this.conclude(null, maxCycles)
   }
 
   /** The agent has reached a conclusion — or run out of deliberation cycles. */
-  private conclude(content: string | null): string {
+  private conclude(content: string | null, cycles: number): string {
+    if (this.verbose) this.log(`concluded after ${cycles} cycle(s)`)
     return content ?? '[deliberation limit reached]'
   }
 
