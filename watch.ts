@@ -1,7 +1,6 @@
 import { watch, readFileSync, writeFileSync, renameSync, rmSync, mkdirSync, existsSync, readdirSync } from 'fs'
 import { resolve } from 'path'
-import { loadPersona, buildSystemPrompt, allTools, runAgent } from './agent.js'
-import { loadNotes } from './memory/memory.js'
+import { Agent } from './agent.js'
 
 const INBOX  = resolve('inbox')
 const OUTBOX = resolve('outbox')
@@ -10,6 +9,7 @@ for (const dir of [INBOX, OUTBOX]) {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
 }
 
+const agent = new Agent('default')
 const processing = new Set<string>()
 
 async function handleFile(filename: string) {
@@ -27,7 +27,7 @@ async function handleFile(filename: string) {
   console.log(`[inbox] ${filename}: ${task.slice(0, 80)}${task.length > 80 ? '...' : ''}`)
 
   try {
-    const reply = await runAgent(task, buildSystemPrompt(loadPersona(), loadNotes()), allTools)
+    const reply = await agent.run(task)
     writeFileSync(resolve(OUTBOX, filename), reply)
     console.log(`[outbox] ${filename}: ${reply.slice(0, 80)}${reply.length > 80 ? '...' : ''}`)
   } catch (e: any) {

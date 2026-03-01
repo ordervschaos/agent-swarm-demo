@@ -1,12 +1,11 @@
 {
-  "name": "chapter-6-genome",
+  "name": "nanoclaw-tutorial",
   "private": true,
   "type": "module",
   "scripts": {
     "start":    "node --no-deprecation --import tsx/esm index.ts",
     "watch":    "node --no-deprecation --import tsx/esm watch.ts",
-    "schedule": "node --no-deprecation --import tsx/esm schedule.ts",
-    "parallel": "node --no-deprecation --import tsx/esm parallel-demo.ts"
+    "schedule": "node --no-deprecation --import tsx/esm schedule.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.0",

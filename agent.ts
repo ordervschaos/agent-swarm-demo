@@ -1,93 +1,103 @@
 /**
- * Agent — tool arrays, persona loading, system prompt, and the run loop.
+ * Agent — the single object you instantiate to run an agent.
  *
- * runAgent() accepts an optional AgentConfig to use isolated sandbox/memory.
- * Without a config, it uses the default ./sandbox/ and ./memory/ paths.
+ *   const agent = new Agent('atlas')
+ *   const reply = await agent.run('Write a haiku')
+ *
+ * The constructor wires up config, persona, memory, tools, and system prompt.
+ * The caller just calls .run(prompt).
  */
 
 import { existsSync, readFileSync } from 'fs'
-import { resolve } from 'path'
 import { llm, MODEL } from './llm.js'
-import { listFilesTool, readFileTool, writeFileTool, executeAction, createActionExecutor } from './actions.js'
-import { saveNoteTool, readNotesTool, executeMemoryTool, createMemoryExecutor } from './memory/memory.js'
+import { allTools, createToolExecutor, loadNotes } from './actions/index.js'
+import { createDefaultConfig } from './agent-config.js'
 import type { AgentConfig } from './agent-config.js'
 import type { ChatCompletionTool, ChatCompletionMessageParam } from 'openai/resources/index'
 
-export const MAX_ITERATIONS = 15
-export const actionTools: ChatCompletionTool[] = [listFilesTool, readFileTool, writeFileTool]
-export const memoryTools: ChatCompletionTool[] = [saveNoteTool, readNotesTool]
-export const allTools: ChatCompletionTool[] = [...actionTools, ...memoryTools]
+const MAX_ITERATIONS = 15
 
-/** Build a tool executor for a config, or use defaults. */
-function buildToolExecutor(config?: AgentConfig): (name: string, args: Record<string, string>) => string {
-  if (!config) {
-    // Default: uses ./sandbox/ and ./memory/
-    return (name, args) => executeAction(name, args) ?? executeMemoryTool(name, args) ?? `Unknown tool: ${name}`
-  }
-
-  const execAction = createActionExecutor(config.sandboxDir)
-  const execMemory = createMemoryExecutor(config.memoryDir)
-  return (name, args) => execAction(name, args) ?? execMemory(name, args) ?? `Unknown tool: ${name}`
+/** Load a persona file. Returns '' if missing. */
+function loadPersona(path: string): string {
+  return existsSync(path) ? readFileSync(path, 'utf-8') : ''
 }
 
-/** Load persona.md from the given path (defaults to ./memory/persona.md). Returns '' if missing. */
-export function loadPersona(path?: string): string {
-  const p = path ?? resolve('memory/persona.md')
-  return existsSync(p) ? readFileSync(p, 'utf-8') : ''
-}
-
-/** Build the system prompt. Always includes memory instruction; appends notes if present. */
-export function buildSystemPrompt(identity: string, notes: string | null): string {
+/** Build the system prompt from identity + notes. */
+function buildSystemPrompt(identity: string, notes: string | null): string {
   let prompt = identity ? `${identity}\n\n---\n\n` : ''
   prompt += `You are a helpful agent. Use your tools to accomplish tasks. All file paths are relative to the sandbox directory. When you have the final answer, respond with text (no tool call).\n\nWhen the user tells you something worth remembering for future sessions, use save_note to record it.`
   if (notes) prompt += `\n\n---\n\nYour notes from previous sessions:\n${notes}`
   return prompt
 }
 
-/** Run the agent loop for a single task. Returns the final text response. */
-export async function runAgent(
-  prompt: string,
-  systemPrompt: string,
-  tools: ChatCompletionTool[],
-  verbose = false,
-  config?: AgentConfig,
-): Promise<string> {
-  const maxIter = config?.maxIterations ?? MAX_ITERATIONS
-  const model = config?.model || MODEL
-  const executeTool = buildToolExecutor(config)
-  let iterations = 0
+export class Agent {
+  readonly config: AgentConfig
+  private systemPrompt: string
+  private tools: ChatCompletionTool[]
+  private executeTool: (name: string, args: Record<string, string>) => string
+  verbose = false
 
-  const messages: ChatCompletionMessageParam[] = [
-    { role: 'system', content: systemPrompt },
-    { role: 'user', content: prompt },
-  ]
+  /**
+   * Create an agent.
+   * @param nameOrConfig — a string name (uses createDefaultConfig) or a full AgentConfig.
+   */
+  constructor(nameOrConfig: string | AgentConfig) {
+    this.config = typeof nameOrConfig === 'string'
+      ? createDefaultConfig(nameOrConfig)
+      : nameOrConfig
 
-  const label = config?.name ? `[${config.name}]` : ''
+    // Wire up identity + memory → system prompt
+    const identity = loadPersona(this.config.persona)
+    const notes = loadNotes(this.config.memoryDir)
+    this.systemPrompt = buildSystemPrompt(identity, notes)
 
-  while (true) {
-    const response = await llm.chat.completions.create({ model, tools, messages })
-    const message = response.choices[0].message
+    // Wire up tools + executor
+    this.tools = this.config.tools.length ? this.config.tools : allTools
+    this.executeTool = createToolExecutor(this.config.sandboxDir, this.config.memoryDir)
+  }
 
-    if (!message.tool_calls || message.tool_calls.length === 0) {
-      return message.content ?? ''
-    }
+  /** Run the agent on a single prompt. Returns the final text response. */
+  async run(prompt: string): Promise<string> {
+    const maxIter = this.config.maxIterations || MAX_ITERATIONS
+    const model = this.config.model || MODEL
+    let iterations = 0
 
-    if (++iterations > maxIter) {
-      return `[max iterations reached]`
-    }
+    const messages: ChatCompletionMessageParam[] = [
+      { role: 'system', content: this.systemPrompt },
+      { role: 'user', content: prompt },
+    ]
 
-    messages.push(message)
+    const label = `[${this.config.name}]`
 
-    for (const call of message.tool_calls) {
-      const args = JSON.parse(call.function.arguments)
-      if (verbose) {
-        console.log(`${label}[${iterations}] ${call.function.name}(${JSON.stringify(args)})`)
+    while (true) {
+      const response = await llm.chat.completions.create({
+        model,
+        tools: this.tools,
+        messages,
+      })
+      const message = response.choices[0].message
+
+      if (!message.tool_calls || message.tool_calls.length === 0) {
+        return message.content ?? ''
       }
-      const result = executeTool(call.function.name, args)
-      if (verbose) {
-        console.log(`${label}    → ${result.slice(0, 200)}${result.length > 200 ? '...' : ''}\n`)
+
+      if (++iterations > maxIter) {
+        return `[max iterations reached]`
       }
-      messages.push({ role: 'tool', tool_call_id: call.id, content: result })
+
+      messages.push(message)
+
+      for (const call of message.tool_calls) {
+        const args = JSON.parse(call.function.arguments)
+        if (this.verbose) {
+          console.log(`${label}[${iterations}] ${call.function.name}(${JSON.stringify(args)})`)
+        }
+        const result = this.executeTool(call.function.name, args)
+        if (this.verbose) {
+          console.log(`${label}    → ${result.slice(0, 200)}${result.length > 200 ? '...' : ''}\n`)
+        }
+        messages.push({ role: 'tool', tool_call_id: call.id, content: result })
+      }
     }
   }
 }

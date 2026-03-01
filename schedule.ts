@@ -1,9 +1,6 @@
-import { existsSync, mkdirSync } from 'fs'
-import { resolve } from 'path'
-import { loadPersona, buildSystemPrompt, allTools, runAgent } from './agent.js'
-import { loadNotes } from './memory/memory.js'
+import { Agent } from './agent.js'
 
-if (!existsSync(resolve('sandbox'))) mkdirSync(resolve('sandbox'), { recursive: true })
+const agent = new Agent('default')
 
 interface Task { id: string; prompt: string; every: number }
 
@@ -28,7 +25,7 @@ async function tick() {
     if (now < nextRun[task.id]) continue
     console.log(`[${task.id}] running`)
     try {
-      const reply = await runAgent(task.prompt, buildSystemPrompt(loadPersona(), loadNotes()), allTools)
+      const reply = await agent.run(task.prompt)
       console.log(`[${task.id}] ${reply.slice(0, 100)}${reply.length > 100 ? '...' : ''}`)
     } catch (e: any) {
       console.error(`[${task.id}] error: ${e.message}`)

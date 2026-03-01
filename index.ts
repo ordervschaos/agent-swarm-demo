@@ -1,5 +1,4 @@
-import { loadPersona, buildSystemPrompt, allTools, runAgent } from './agent.js'
-import { loadNotes } from './memory/memory.js'
+import { Agent } from './agent.js'
 
 const prompt = process.argv[2]
 if (!prompt) {
@@ -7,7 +6,7 @@ if (!prompt) {
   process.exit(1)
 }
 
-const identity = loadPersona()
-const notes = loadNotes()
-const reply = await runAgent(prompt, buildSystemPrompt(identity, notes), allTools, true)
+const agent = new Agent('default')
+agent.verbose = true
+const reply = await agent.run(prompt)
 console.log(reply)
