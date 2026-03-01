@@ -8,5 +8,5 @@ if (!prompt) {
 
 const agent = new Agent('default')
 agent.verbose = true
-const reply = await agent.run(prompt)
+const reply = await agent.process(prompt)
 console.log(reply)

@@ -10,6 +10,7 @@
 
 import { existsSync, mkdirSync } from 'fs'
 import { resolve } from 'path'
+import { allTools } from './actions/index.js'
 import type { ChatCompletionTool } from 'openai/resources/index'
 
 export interface AgentConfig {
@@ -25,7 +26,6 @@ export interface AgentConfig {
 /**
  * Create a default config for an agent.
  * Creates the agent's directories under agents/{name}/ if they don't exist.
- * Tools and model are left empty — the caller fills them with createTools() and MODEL.
  */
 export function createDefaultConfig(name: string): AgentConfig {
   const agentRoot = resolve('agents', name)
@@ -43,7 +43,7 @@ export function createDefaultConfig(name: string): AgentConfig {
     memoryDir,
     sandboxDir,
     model: '',
-    tools: [],
+    tools: allTools,
     maxIterations: 15,
   }
 }
