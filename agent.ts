@@ -4,7 +4,7 @@
  *   const agent = new Agent('atlas')
  *   const reply = await agent.process('Write a haiku')
  *
- * The constructor assembles the organs (memory, hands).
+ * The constructor is the agent waking up: recalling identity and memories.
  * The process() method is the life cycle.
  */
 
@@ -19,7 +19,7 @@ const MAX_ITERATIONS = 15
 
 export class Agent {
   readonly config: AgentConfig
-  private systemPrompt: string
+  private awareness: string
   private performAction: (name: string, args: Record<string, string>) => string
   verbose = false
 
@@ -28,7 +28,11 @@ export class Agent {
       ? createDefaultConfig(nameOrConfig)
       : nameOrConfig
 
-    this.systemPrompt = this.buildSystemPrompt()
+    // Waking up
+    const identity = this.recallIdentity()
+    const memories = this.recallMemories()
+    this.awareness = this.formAwareness(identity, memories)
+
     this.performAction = createToolExecutor(this.config.sandboxDir, this.config.memoryDir)
   }
 
@@ -39,15 +43,12 @@ export class Agent {
     const maxIter = this.config.maxIterations || MAX_ITERATIONS
 
     for (let iteration = 1; iteration <= maxIter; iteration++) {
-      // Think: turn the message history into a response
       const thought = await this.think(messages)
       const message = thought.choices[0].message
 
-      // If the agent responded with plain text, we're done
       const wantsToAct = message.tool_calls && message.tool_calls.length > 0
       if (!wantsToAct) return message.content ?? ''
 
-      // Act: execute each tool call, observe the results
       messages.push(message)
       for (const call of message.tool_calls!) {
         const observation = this.act(call.function.name, call.function.arguments)
@@ -60,7 +61,15 @@ export class Agent {
 
   // ── Organs ──────────────────────────────────────────────────────
 
-  /** Think: send everything the agent knows to the LLM, get back a response. */
+  /** Perceive: take in new input from the outside world. */
+  private perceive(prompt: string): ChatCompletionMessageParam[] {
+    return [
+      { role: 'system', content: this.awareness },
+      { role: 'user', content: prompt },
+    ]
+  }
+
+  /** Think: reason about everything the agent knows so far. */
   private async think(messages: ChatCompletionMessageParam[]) {
     return llm.chat.completions.create({
       model: this.config.model || MODEL,
@@ -69,15 +78,7 @@ export class Agent {
     })
   }
 
-  /** Perceive: assemble the initial context the agent will see. */
-  private perceive(prompt: string): ChatCompletionMessageParam[] {
-    return [
-      { role: 'system', content: this.systemPrompt },
-      { role: 'user', content: prompt },
-    ]
-  }
-
-  /** Act: execute a tool call and return what happened. */
+  /** Act: do something and observe what happened. */
   private act(name: string, rawArgs: string): string {
     const args = JSON.parse(rawArgs)
     if (this.verbose) this.log(`${name}(${JSON.stringify(args)})`)
@@ -88,29 +89,32 @@ export class Agent {
     return result
   }
 
-  // ── Assembly (constructor helpers) ──────────────────────────────
+  // ── Waking up ──────────────────────────────────────────────────
 
-  /** Build the system prompt from persona file + saved notes. */
-  private buildSystemPrompt(): string {
-    const identity = this.loadPersona()
-    const notes = loadNotes(this.config.memoryDir)
+  /** Who am I? Load persona / identity file. */
+  private recallIdentity(): string {
+    const path = this.config.persona
+    return existsSync(path) ? readFileSync(path, 'utf-8') : ''
+  }
 
-    let prompt = identity ? `${identity}\n\n---\n\n` : ''
-    prompt += [
+  /** What do I remember? Load notes from previous sessions. */
+  private recallMemories(): string | null {
+    return loadNotes(this.config.memoryDir)
+  }
+
+  /** Combine identity + memories into the context the agent thinks from. */
+  private formAwareness(identity: string, memories: string | null): string {
+    let awareness = identity ? `${identity}\n\n---\n\n` : ''
+    awareness += [
       'You are a helpful agent. Use your tools to accomplish tasks.',
       'All file paths are relative to the sandbox directory.',
       'When you have the final answer, respond with text (no tool call).',
       '',
       'When the user tells you something worth remembering for future sessions, use save_note to record it.',
     ].join('\n')
-    if (notes) prompt += `\n\n---\n\nYour notes from previous sessions:\n${notes}`
+    if (memories) awareness += `\n\n---\n\nYour notes from previous sessions:\n${memories}`
 
-    return prompt
-  }
-
-  private loadPersona(): string {
-    const path = this.config.persona
-    return existsSync(path) ? readFileSync(path, 'utf-8') : ''
+    return awareness
   }
 
   private log(text: string) {
