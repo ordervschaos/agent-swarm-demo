@@ -50,9 +50,13 @@ export class Agent {
       const wantsToAct = message.tool_calls && message.tool_calls.length > 0
       if (!wantsToAct) return this.conclude(message.content, cycle)
 
-      // Not yet — act, observe, and think again
+      // The agent is still thinking — share its reasoning
+      if (message.content) this.log(`thinking: ${message.content}`)
+
+      // Carry out the intended actions
       messages.push(message)
       for (const call of message.tool_calls!) {
+        this.log(`acting: ${call.function.name}`)
         const observation = this.act(call.function.name, call.function.arguments)
         messages.push({ role: 'tool', tool_call_id: call.id, content: observation })
       }
