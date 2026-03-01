@@ -25,7 +25,7 @@ async function tick() {
     if (now < nextRun[task.id]) continue
     console.log(`[${task.id}] running`)
     try {
-      const reply = await agent.process(task.prompt)
+      const reply = await agent.deliberate(task.prompt)
       console.log(`[${task.id}] ${reply.slice(0, 100)}${reply.length > 100 ? '...' : ''}`)
     } catch (e: any) {
       console.error(`[${task.id}] error: ${e.message}`)

@@ -2,10 +2,10 @@
  * Agent — the perceive → think → act → observe loop.
  *
  *   const agent = new Agent('atlas')
- *   const reply = await agent.process('Write a haiku')
+ *   const reply = await agent.deliberate('Write a haiku')
  *
  * The constructor is the agent waking up: recalling identity and memories.
- * The process() method is the life cycle.
+ * deliberate() is the cognitive cycle: think → act → observe → repeat → conclude.
  */
 
 import { existsSync, readFileSync } from 'fs'
@@ -36,19 +36,21 @@ export class Agent {
     this.performAction = createToolExecutor(this.config.sandboxDir, this.config.memoryDir)
   }
 
-  // ── The life cycle ──────────────────────────────────────────────
+  // ── Deliberation ─────────────────────────────────────────────────
 
-  async process(prompt: string): Promise<string> {
+  async deliberate(prompt: string): Promise<string> {
     const messages = this.perceive(prompt)
-    const maxIter = this.config.maxIterations || MAX_ITERATIONS
+    const maxCycles = this.config.maxIterations || MAX_ITERATIONS
 
-    for (let iteration = 1; iteration <= maxIter; iteration++) {
+    for (let cycle = 1; cycle <= maxCycles; cycle++) {
       const thought = await this.think(messages)
       const message = thought.choices[0].message
 
+      // Has the agent reached a conclusion?
       const wantsToAct = message.tool_calls && message.tool_calls.length > 0
-      if (!wantsToAct) return message.content ?? ''
+      if (!wantsToAct) return this.conclude(message.content)
 
+      // Not yet — act, observe, and think again
       messages.push(message)
       for (const call of message.tool_calls!) {
         const observation = this.act(call.function.name, call.function.arguments)
@@ -56,10 +58,13 @@ export class Agent {
       }
     }
 
-    return '[max iterations reached]'
+    return this.conclude(null)
   }
 
-  // ── Organs ──────────────────────────────────────────────────────
+  /** The agent has reached a conclusion — or run out of deliberation cycles. */
+  private conclude(content: string | null): string {
+    return content ?? '[deliberation limit reached]'
+  }
 
   /** Perceive: take in new input from the outside world. */
   private perceive(prompt: string): ChatCompletionMessageParam[] {

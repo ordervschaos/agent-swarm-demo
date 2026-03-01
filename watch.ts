@@ -27,7 +27,7 @@ async function handleFile(filename: string) {
   console.log(`[inbox] ${filename}: ${task.slice(0, 80)}${task.length > 80 ? '...' : ''}`)
 
   try {
-    const reply = await agent.process(task)
+    const reply = await agent.deliberate(task)
     writeFileSync(resolve(OUTBOX, filename), reply)
     console.log(`[outbox] ${filename}: ${reply.slice(0, 80)}${reply.length > 80 ? '...' : ''}`)
   } catch (e: any) {
