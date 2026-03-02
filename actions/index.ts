@@ -6,12 +6,12 @@
  *   2. Import it here and add to `actionModules`
  */
 
+import { resolve } from 'path'
 import * as files from './files.js'
 import * as memory from './memory.js'
 import * as messaging from './messaging.js'
 import * as skills from './skills.js'
 import * as delegation from './delegation.js'
-import * as workspace from './workspace.js'
 import type { ChatCompletionTool } from 'openai/resources/index'
 import type { AgentFactory } from './delegation.js'
 
@@ -25,7 +25,7 @@ interface ActionModule {
   createHandler: (...args: any[]) => SyncHandler | AsyncHandler
 }
 
-const baseModules: ActionModule[] = [files, memory, messaging, skills, workspace]
+const baseModules: ActionModule[] = [files, memory, messaging, skills]
 
 /** All tool definitions, collected from every action module. */
 export function allTools(options?: { canDelegate?: boolean }): ChatCompletionTool[] {
@@ -38,16 +38,16 @@ export function createToolExecutor(
   sandboxDir: string,
   memoryDir: string,
   agentName: string,
-  options?: { skillsDir?: string; agentFactory?: AgentFactory; workspaceDir?: string },
+  options?: { skillsDir?: string; agentFactory?: AgentFactory; agentMessagesDir?: string },
 ): (name: string, args: Record<string, string>) => Promise<string> {
   const skillsDir = options?.skillsDir ?? 'skills'
+  const agentMessagesDir = options?.agentMessagesDir ?? resolve('agents', agentName, 'agent-messages')
 
   const syncHandlers: SyncHandler[] = [
     files.createHandler(sandboxDir),
     memory.createHandler(memoryDir),
-    messaging.createHandler(agentName),
+    messaging.createHandler(agentName, agentMessagesDir),
     skills.createHandler(skillsDir),
-    ...(options?.workspaceDir ? [workspace.createHandler(options.workspaceDir)] : []),
   ]
 
   // Delegation handler is async — only added for leaders

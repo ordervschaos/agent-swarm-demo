@@ -23,7 +23,7 @@ export interface AgentConfig {
   tools: ChatCompletionTool[] // capabilities
   maxIterations: number     // loop cap
   canDelegate: boolean      // can this agent delegate tasks to others?
-  workspaceDir: string      // shared workspace for cross-agent collaboration
+  agentMessagesDir: string  // inter-agent messages (separate from daemon-watched inbox)
 }
 
 /**
@@ -37,9 +37,9 @@ export function createDefaultConfig(name: string): AgentConfig {
   const sandboxDir = resolve(agentRoot, 'sandbox')
   const inboxDir = resolve(agentRoot, 'inbox')
   const persona = resolve(agentRoot, 'identity.md')
-  const workspaceDir = resolve('workspace')
+  const agentMessagesDir = resolve(agentRoot, 'agent-messages')
 
-  for (const dir of [memoryDir, sandboxDir, inboxDir, workspaceDir]) {
+  for (const dir of [memoryDir, sandboxDir, inboxDir, agentMessagesDir]) {
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
   }
 
@@ -53,7 +53,7 @@ export function createDefaultConfig(name: string): AgentConfig {
     tools: allTools(),
     maxIterations: 15,
     canDelegate: false,
-    workspaceDir,
+    agentMessagesDir,
   }
 
   // Merge overrides from config.json if it exists

@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "start":  "node --no-deprecation --import tsx/esm index.ts",
-    "awaken": "node --no-deprecation --import tsx/esm awaken.ts"
+    "awaken": "node --no-deprecation --import tsx/esm awaken.ts",
+    "test":   "node --no-deprecation --import tsx/esm --test **/*.test.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.0",

@@ -45,7 +45,7 @@ export class Agent {
       this.config.sandboxDir,
       this.config.memoryDir,
       this.config.name,
-      { agentFactory, workspaceDir: this.config.workspaceDir },
+      { agentFactory, agentMessagesDir: this.config.agentMessagesDir },
     )
   }
 
@@ -136,7 +136,7 @@ export class Agent {
           'Use list_team to see available agents, then delegate subtasks to the most appropriate one.',
           'The worker will execute the task fully and return their result to you.',
           'Synthesize worker results into a final answer. Only do work yourself if delegation is unnecessary.',
-          'Instruct workers to use the shared workspace (workspace_write/workspace_read) to share their output so other workers can build on it.',
+          'Instruct workers to use send_message to share their output with other agents who need it.',
         ]
       : []
 
@@ -147,14 +147,11 @@ export class Agent {
       '',
       'When the user tells you something worth remembering for future sessions, use save_note to record it.',
       '',
-      'You can communicate with other agents using send_message and list_agents.',
+      'You can communicate with other agents using send_message, read_messages, and list_agents.',
       'Use list_agents to discover available agents, then send_message to reach them.',
+      'Use read_messages to check for messages from other agents. Messages are consumed after reading.',
       '',
       'You have skills you can invoke with run_skill, or list with list_skills.',
-      '',
-      'You have access to a shared workspace that all agents can read and write.',
-      'Use workspace_write, workspace_read, and workspace_list to collaborate.',
-      'Write your output there so other agents can build on it.',
       ...delegationInstructions,
     ].join('\n')
 
