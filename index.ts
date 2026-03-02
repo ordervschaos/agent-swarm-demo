@@ -1,14 +1,21 @@
+/**
+ * Entry point.
+ *
+ *   npm start              # REPL with default 'leader' agent
+ *   npm start -- nova      # REPL with specific agent
+ *   npm start -- nova "Write a haiku"   # single-shot mode
+ */
+
 import { Agent } from './agent.js'
+import { runOnce, startRepl } from './ui.js'
 
-const prompt = process.argv[2]
-if (!prompt) {
-  console.error('Usage: npm start "<prompt>" [agent]')
-  process.exit(1)
-}
-
-const agentName = process.argv[3] || 'leader'
+const agentName = process.argv[2] || 'leader'
+const singleShot = process.argv[3]
 
 const agent = new Agent(agentName)
-agent.verbose = true
-const reply = await agent.deliberate(prompt)
-console.log(reply)
+
+if (singleShot) {
+  await runOnce(agent, singleShot)
+} else {
+  startRepl(agent)
+}

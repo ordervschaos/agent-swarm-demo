@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "start":  "node --no-deprecation --import tsx/esm index.ts",
+    "chat":   "node --no-deprecation --import tsx/esm index.ts",
     "awaken": "node --no-deprecation --import tsx/esm awaken.ts",
     "test":   "node --no-deprecation --import tsx/esm --test **/*.test.ts"
   },

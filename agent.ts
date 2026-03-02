@@ -18,11 +18,18 @@ import type { ChatCompletionMessageParam } from 'openai/resources/index'
 
 const MAX_ITERATIONS = 15
 
+export type AgentEvent =
+  | { type: 'thinking'; text: string }
+  | { type: 'tool_start'; name: string; args: Record<string, unknown> }
+  | { type: 'tool_end'; name: string; result: string }
+  | { type: 'response'; text: string; cycles: number }
+
 export class Agent {
   readonly config: AgentConfig
   private awareness: string
   private performAction: (name: string, args: Record<string, string>) => Promise<string>
   verbose = false
+  onEvent?: (event: AgentEvent) => void
 
   constructor(name: string) {
     this.config = createDefaultConfig(name)
@@ -64,13 +71,19 @@ export class Agent {
       if (!wantsToAct) return this.conclude(message.content, cycle)
 
       // The agent is still thinking — share its reasoning
-      if (message.content) this.log(`thinking: ${message.content}`)
+      if (message.content) {
+        this.log(`thinking: ${message.content}`)
+        this.emit({ type: 'thinking', text: message.content })
+      }
 
       // Carry out the intended actions
       messages.push(message)
       for (const call of message.tool_calls!) {
+        const args = JSON.parse(call.function.arguments)
         this.log(`acting: ${call.function.name}`)
+        this.emit({ type: 'tool_start', name: call.function.name, args })
         const observation = await this.act(call.function.name, call.function.arguments)
+        this.emit({ type: 'tool_end', name: call.function.name, result: observation })
         messages.push({ role: 'tool', tool_call_id: call.id, content: observation })
       }
     }
@@ -81,7 +94,9 @@ export class Agent {
   /** The agent has reached a conclusion — or run out of deliberation cycles. */
   private conclude(content: string | null, cycles: number): string {
     if (this.verbose) this.log(`concluded after ${cycles} cycle(s)`)
-    return content ?? '[deliberation limit reached]'
+    const text = content ?? '[deliberation limit reached]'
+    this.emit({ type: 'response', text, cycles })
+    return text
   }
 
   /** Perceive: take in new input from the outside world. */
@@ -104,10 +119,10 @@ export class Agent {
   /** Act: do something and observe what happened. */
   private async act(name: string, rawArgs: string): Promise<string> {
     const args = JSON.parse(rawArgs)
-    if (this.verbose) this.log(`${name}(${JSON.stringify(args)})`)
+    this.log(`${name}(${JSON.stringify(args)})`)
 
     const result = await this.performAction(name, args)
-    if (this.verbose) this.log(`-> ${result.slice(0, 200)}${result.length > 200 ? '...' : ''}`)
+    this.log(`-> ${result.slice(0, 200)}${result.length > 200 ? '...' : ''}`)
 
     return result
   }
@@ -167,7 +182,11 @@ export class Agent {
     return awareness
   }
 
+  private emit(event: AgentEvent) {
+    this.onEvent?.(event)
+  }
+
   private log(text: string) {
-    console.log(`[${this.config.name}] ${text}`)
+    if (!this.onEvent && this.verbose) console.log(`[${this.config.name}] ${text}`)
   }
 }
