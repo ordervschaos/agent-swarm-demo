@@ -34,4 +34,9 @@ export const cues: Cue[] = [
     agent: 'nova',
     sensor: { type: 'inbox', dir: 'agents/nova/inbox', pattern: '*.txt' },
   },
+  {
+    id: 'leader-inbox',
+    agent: 'leader',
+    sensor: { type: 'inbox', dir: 'agents/leader/inbox', pattern: '*.txt' },
+  },
 ]

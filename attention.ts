@@ -12,6 +12,7 @@
 import { watch, readFileSync, writeFileSync, renameSync, rmSync, mkdirSync, existsSync, readdirSync } from 'fs'
 import { resolve, basename } from 'path'
 import { Agent } from './agent.js'
+import { loadSkill } from './skills.js'
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -178,15 +179,10 @@ export class Attention {
 
     // Skill file — load and interpolate
     if (cue.skill) {
-      const skillPath = resolve('skills', cue.skill)
-      if (existsSync(skillPath)) {
-        let template = readFileSync(skillPath, 'utf-8')
-        for (const [key, value] of Object.entries(stimulus.data)) {
-          template = template.replaceAll(`{{${key}}}`, value)
-        }
-        return template
-      }
-      console.warn(`[${cue.id}] skill file not found: ${skillPath}`)
+      const skillName = basename(cue.skill, '.md')
+      const content = loadSkill('skills', skillName, stimulus.data)
+      if (content) return content
+      console.warn(`[${cue.id}] skill not found: ${cue.skill}`)
     }
 
     // Inbox fallback — the file content IS the prompt

@@ -8,7 +8,7 @@
  * This is the prerequisite for running multiple agents in parallel.
  */
 
-import { existsSync, mkdirSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync } from 'fs'
 import { resolve } from 'path'
 import { allTools } from './actions/index.js'
 import type { ChatCompletionTool } from 'openai/resources/index'
@@ -22,11 +22,14 @@ export interface AgentConfig {
   model: string             // which LLM model ('' = use default from llm.ts)
   tools: ChatCompletionTool[] // capabilities
   maxIterations: number     // loop cap
+  canDelegate: boolean      // can this agent delegate tasks to others?
+  workspaceDir: string      // shared workspace for cross-agent collaboration
 }
 
 /**
  * Create a default config for an agent.
  * Creates the agent's directories under agents/{name}/ if they don't exist.
+ * Merges overrides from agents/{name}/config.json if present.
  */
 export function createDefaultConfig(name: string): AgentConfig {
   const agentRoot = resolve('agents', name)
@@ -34,19 +37,33 @@ export function createDefaultConfig(name: string): AgentConfig {
   const sandboxDir = resolve(agentRoot, 'sandbox')
   const inboxDir = resolve(agentRoot, 'inbox')
   const persona = resolve(agentRoot, 'identity.md')
+  const workspaceDir = resolve('workspace')
 
-  for (const dir of [memoryDir, sandboxDir, inboxDir]) {
+  for (const dir of [memoryDir, sandboxDir, inboxDir, workspaceDir]) {
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
   }
 
-  return {
+  const config: AgentConfig = {
     name,
     persona,
     memoryDir,
     sandboxDir,
     inboxDir,
     model: '',
-    tools: allTools,
+    tools: allTools(),
     maxIterations: 15,
+    canDelegate: false,
+    workspaceDir,
   }
+
+  // Merge overrides from config.json if it exists
+  const configPath = resolve(agentRoot, 'config.json')
+  if (existsSync(configPath)) {
+    const overrides = JSON.parse(readFileSync(configPath, 'utf-8'))
+    if (overrides.canDelegate !== undefined) config.canDelegate = overrides.canDelegate
+    if (overrides.model) config.model = overrides.model
+    if (overrides.maxIterations) config.maxIterations = overrides.maxIterations
+  }
+
+  return config
 }
