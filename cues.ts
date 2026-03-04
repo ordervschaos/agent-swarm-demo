@@ -39,4 +39,22 @@ export const cues: Cue[] = [
     agent: 'leader',
     sensor: { type: 'inbox', dir: 'agents/leader/inbox', pattern: '*.txt' },
   },
+
+  // --- Job Search Agents ---
+  {
+    id: 'scout-search',
+    agent: 'scout',
+    sensor: { type: 'clock', every: 6 * 60 * 60_000 }, // every 6 hours
+    skill: 'job-search.md',
+  },
+  {
+    id: 'scout-inbox',
+    agent: 'scout',
+    sensor: { type: 'inbox', dir: 'agents/scout/inbox', pattern: '*.txt' },
+  },
+  {
+    id: 'tracker-inbox',
+    agent: 'tracker',
+    sensor: { type: 'inbox', dir: 'agents/tracker/inbox', pattern: '*.txt' },
+  },
 ]

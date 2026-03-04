@@ -12,6 +12,9 @@ import * as memory from './memory.js'
 import * as messaging from './messaging.js'
 import * as skills from './skills.js'
 import * as delegation from './delegation.js'
+import * as web from './web.js'
+import * as jobs from './jobs.js'
+import * as gmail from './gmail.js'
 import type { ChatCompletionTool } from 'openai/resources/index'
 import type { AgentFactory } from './delegation.js'
 
@@ -25,7 +28,7 @@ interface ActionModule {
   createHandler: (...args: any[]) => SyncHandler | AsyncHandler
 }
 
-const baseModules: ActionModule[] = [files, memory, messaging, skills]
+const baseModules: ActionModule[] = [files, memory, messaging, skills, web, jobs, gmail]
 
 /** All tool definitions, collected from every action module. */
 export function allTools(options?: { canDelegate?: boolean }): ChatCompletionTool[] {
@@ -50,15 +53,21 @@ export function createToolExecutor(
     skills.createHandler(skillsDir),
   ]
 
+  const asyncHandlers: AsyncHandler[] = [
+    web.createHandler(),
+    jobs.createHandler(),
+    gmail.createHandler(),
+  ]
+
   // Delegation handler is async — only added for leaders
-  const asyncHandler: AsyncHandler | null = options?.agentFactory
-    ? delegation.createHandler(options.agentFactory)
-    : null
+  if (options?.agentFactory) {
+    asyncHandlers.push(delegation.createHandler(options.agentFactory))
+  }
 
   return async (name, args) => {
-    // Try async delegation handler first (if present)
-    if (asyncHandler) {
-      const result = await asyncHandler(name, args)
+    // Try async handlers first (web, delegation)
+    for (const handler of asyncHandlers) {
+      const result = await handler(name, args)
       if (result !== null) return result
     }
 

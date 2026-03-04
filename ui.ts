@@ -78,9 +78,50 @@ function printToolEnd(result: string) {
   }
 }
 
+/** Convert basic markdown to ANSI-styled terminal output. */
+function renderMarkdown(text: string): string {
+  return text
+    .split('\n')
+    .map(line => {
+      // Headings: ### Heading → bold cyan
+      const headingMatch = line.match(/^(#{1,3})\s+(.*)/)
+      if (headingMatch) {
+        return `${c.cyan}${c.bold}${headingMatch[2]}${c.reset}`
+      }
+      // Bullet points: - or * items → cyan bullet
+      const bulletMatch = line.match(/^(\s*)[*-]\s+(.*)/)
+      if (bulletMatch) {
+        const indent = bulletMatch[1]
+        const content = renderInline(bulletMatch[2])
+        return `${indent}${c.cyan}•${c.reset} ${content}`
+      }
+      // Numbered list: 1. item
+      const numMatch = line.match(/^(\s*)(\d+)\.\s+(.*)/)
+      if (numMatch) {
+        const content = renderInline(numMatch[3])
+        return `${numMatch[1]}${c.cyan}${numMatch[2]}.${c.reset} ${content}`
+      }
+      // Horizontal rule
+      if (/^---+$/.test(line.trim())) {
+        const w = Math.min(process.stdout.columns || 80, 60)
+        return c.dim + '─'.repeat(w) + c.reset
+      }
+      return renderInline(line)
+    })
+    .join('\n')
+}
+
+/** Render inline markdown: **bold**, *italic*, `code`. */
+function renderInline(text: string): string {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, `${c.bold}$1${c.reset}`)
+    .replace(/\*(.+?)\*/g, `${c.italic}$1${c.reset}`)
+    .replace(/`(.+?)`/g, `${c.cyan}$1${c.reset}`)
+}
+
 function printResponse(text: string, cycles: number) {
   console.log()
-  console.log(text)
+  console.log(renderMarkdown(text))
   console.log(`\n${c.dim}(${cycles} cycle${cycles === 1 ? '' : 's'})${c.reset}`)
 }
 

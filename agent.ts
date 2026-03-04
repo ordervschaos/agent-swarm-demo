@@ -68,7 +68,15 @@ export class Agent {
 
       // Has the agent reached a conclusion?
       const wantsToAct = message.tool_calls && message.tool_calls.length > 0
-      if (!wantsToAct) return this.conclude(message.content, cycle)
+      if (!wantsToAct) {
+        // Empty response (no content, no tools) = likely truncated — nudge to continue
+        if (!message.content) {
+          messages.push(message)
+          messages.push({ role: 'user', content: 'Continue working on the task. You have more cycles available.' })
+          continue
+        }
+        return this.conclude(message.content, cycle)
+      }
 
       // The agent is still thinking — share its reasoning
       if (message.content) {
